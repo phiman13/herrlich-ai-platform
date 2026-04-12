@@ -18,13 +18,13 @@ app = FastAPI()
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 WORKSPACE = "/home/claude/workspace"
-
-# Deduplizierung – verhindert doppelte Verarbeitung
 processed_updates = set()
 
 def detect_intent(text):
     t = text.lower()
-    if any(k in t for k in ["code", "projekt", "github", "bug", "fix", "deploy", "test", "recipe", "backlog", "todo", "erstelle", "fixe", "changelog", "roadmap"]):
+    if any(k in t for k in ["recherchiere", "such im internet", "was ist aktuell", "aktuelle news", "aktuelle entwicklungen"]):
+        return "research"
+    if any(k in t for k in ["code", "projekt", "github", "bug", "fix", "deploy", "test", "recipe", "backlog", "todo", "erstelle", "fixe", "changelog", "roadmap", "füge", "trage ein", "ergänze", "aktualisiere", "remove", "lösche", "delete", "entferne", "pull", "push", "git"]):
         return "coding"
     if any(k in t for k in ["meeting", "protokoll", "zusammenfassung", "kunde", "praesentation", "research", "fass", "analysiere"]):
         return "work"
@@ -32,7 +32,7 @@ def detect_intent(text):
 
 def detect_coding_mode(text):
     t = text.lower()
-    if any(k in t for k in ["fixe", "baue", "erstelle", "implementiere", "refactor", "schreibe", "loesche", "aendere", "update", "add", "remove", "lösche", "delete", "entferne", "pull", "push", "git", "füge", "trage ein", "ergänze", "aktualisiere", "changelog", "roadmap"]):
+    if any(k in t for k in ["fixe", "baue", "erstelle", "implementiere", "refactor", "schreibe", "loesche", "aendere", "update", "add", "remove", "changelog", "roadmap", "füge", "trage ein", "ergänze", "aktualisiere", "lösche", "delete", "entferne"]):
         return "action"
     return "question"
 
@@ -58,16 +58,27 @@ def read_project_files(project):
             context += f"\n\n### {filename}:\n{content}"
     return context
 
-async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001"):
+async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False):
     bot = Bot(token=TELEGRAM_TOKEN)
     try:
-        response = claude.messages.create(
-            model=model,
-            max_tokens=1024,
-            system=system,
-            messages=[{"role": "user", "content": user}]
-        )
-        answer = response.content[0].text
+        kwargs = {
+            "model": model,
+            "max_tokens": 2048,
+            "system": system,
+            "messages": [{"role": "user", "content": user}]
+        }
+        if use_web_search:
+            kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+
+        response = claude.messages.create(**kwargs)
+
+        answer = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                answer += block.text
+
+        if not answer:
+            answer = "Keine Antwort erhalten."
         if len(answer) > 4000:
             answer = answer[:4000] + "\n[...]"
         await bot.send_message(chat_id=chat_id, text=answer)
@@ -136,11 +147,18 @@ async def git_push(chat_id, project):
     bot = Bot(token=TELEGRAM_TOKEN)
     workspace = f"{WORKSPACE}/{project}"
     try:
+        subprocess.run(["sudo", "-u", "claude", "git", "pull", "--rebase", "origin", "main"], cwd=workspace)
         subprocess.run(["sudo", "-u", "claude", "git", "add", "-A"], cwd=workspace)
-        subprocess.run(["sudo", "-u", "claude", "git", "commit", "-m", "feat: Claude Code changes via Jarvis"], cwd=workspace)
+        result_commit = subprocess.run(
+            ["sudo", "-u", "claude", "git", "commit", "-m", "feat: Claude Code changes via Jarvis"],
+            cwd=workspace, capture_output=True, text=True
+        )
+        if "nothing to commit" in result_commit.stdout:
+            await bot.send_message(chat_id=chat_id, text="Nichts zu pushen.")
+            return
         result = subprocess.run(["sudo", "-u", "claude", "git", "push"], cwd=workspace, capture_output=True, text=True)
         if result.returncode == 0:
-            await bot.send_message(chat_id=chat_id, text=f"Gepusht zu GitHub.")
+            await bot.send_message(chat_id=chat_id, text="Gepusht zu GitHub.")
         else:
             await bot.send_message(chat_id=chat_id, text=f"Push fehlgeschlagen:\n{result.stderr}")
     except Exception as e:
@@ -152,26 +170,24 @@ async def start(update, context):
         "Coding (Frage): 'Was sind die Todos in recipe-app?'\n"
         "Coding (Aktion): 'Fixe den Login-Bug in recipe-app'\n"
         "Push: 'push recipe-app'\n"
+        "Research: 'Recherchiere: ESG Pflichten 2026'\n"
         "Work: 'Fass mir diesen Text zusammen'\n"
         "Personal: 'Was sind gute Laufschuhe?'"
     )
 
 async def handle_message(update, context):
-    # Deduplizierung
     update_id = update.update_id
     if update_id in processed_updates:
         logger.info(f"Duplikat ignoriert: update_id={update_id}")
         return
     processed_updates.add(update_id)
-
-    # Set nicht zu gross werden lassen
     if len(processed_updates) > 1000:
         processed_updates.clear()
 
     text = update.message.text
     chat_id = update.message.chat_id
     intent = detect_intent(text)
-    logger.info(f"Intent: {intent} | update_id: {update_id} | Nachricht: {text}")
+    logger.info(f"Intent: {intent} | Nachricht: {text}")
 
     if text.lower().startswith("push "):
         project = text[5:].strip()
@@ -179,7 +195,17 @@ async def handle_message(update, context):
         await git_push(chat_id=chat_id, project=project)
         return
 
-    if intent == "coding":
+    if intent == "research":
+        await update.message.reply_text("Recherchiere im Web...")
+        await ask_claude(
+            chat_id=chat_id,
+            system="Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
+            user=text,
+            model="claude-sonnet-4-6",
+            use_web_search=True
+        )
+
+    elif intent == "coding":
         project = extract_project(text)
         mode = detect_coding_mode(text)
         if mode == "action":
@@ -200,7 +226,8 @@ async def handle_message(update, context):
             chat_id=chat_id,
             system="Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
             user=text,
-            model="claude-sonnet-4-6"
+            model="claude-sonnet-4-6",
+            use_web_search=True
         )
 
     else:
