@@ -1,15 +1,28 @@
 import os
+import re
+import sys
 import json
 import logging
 import asyncio
 import subprocess
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import anthropic
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from calendar_agent import CalendarAgent, BERLIN
+
+calendar_agent = CalendarAgent()
+
+_WEEKDAYS_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger("jarvis")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 claude = anthropic.Anthropic()
@@ -22,6 +35,8 @@ processed_updates = set()
 
 def detect_intent(text):
     t = text.lower()
+    if detect_calendar_window(text) is not None:
+        return "calendar"
     if any(k in t for k in ["recherchiere", "such im internet", "was ist aktuell", "aktuelle news", "aktuelle entwicklungen"]):
         return "research"
     if any(k in t for k in ["code", "projekt", "github", "bug", "fix", "deploy", "test", "recipe", "backlog", "todo", "erstelle", "fixe", "changelog", "roadmap", "füge", "trage ein", "ergänze", "aktualisiere", "remove", "lösche", "delete", "entferne", "pull", "push", "git"]):
@@ -57,6 +72,105 @@ def read_project_files(project):
                 content = content[:3000] + "\n[gekuerzt]"
             context += f"\n\n### {filename}:\n{content}"
     return context
+
+def detect_calendar_window(text):
+    """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
+
+    Order matters:
+      1. "nächster termin"  -> next
+      2. "diese woche"      -> week (from now until Sunday 23:59:59)
+      3. "heute"            -> today (word boundary, wins over "morgen")
+      4. "morgen"           -> tomorrow (word boundary, avoids "Guten Morgen")
+    """
+    t = text.lower()
+    now = datetime.now(BERLIN)
+
+    if "nächster termin" in t or "naechster termin" in t or "wann ist mein nächster" in t or "wann ist mein naechster" in t:
+        return ("next", None, None)
+    if "diese woche" in t or "woche kalender" in t or "termine woche" in t:
+        start = now
+        days_until_sunday = 6 - now.weekday()  # 0=Mo, 6=So
+        sunday = (now + timedelta(days=days_until_sunday)).replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+        return ("week", start, sunday)
+    if re.search(r'\bheute\b', t) and ("was habe ich" in t or "termine" in t or "kalender" in t):
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return ("today", start, end)
+    if re.search(r'\bmorgen\b', t) and ("was habe ich" in t or "termine" in t or "kalender" in t):
+        start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return ("tomorrow", start, end)
+    return None
+
+
+def _fmt_time(dt):
+    return dt.strftime("%H:%M")
+
+
+def _fmt_date(dt):
+    return f"{_WEEKDAYS_DE[dt.weekday()]} {dt.strftime('%d.%m.')}"
+
+
+def _fmt_time_or_allday(ev):
+    if getattr(ev, "all_day", False):
+        return "ganztägig"
+    return ev.start.strftime("%H:%M")
+
+
+def format_calendar_response(kind, events, query_start=None):
+    if kind == "next":
+        ev = events  # single event or None
+        if ev is None:
+            return "Kein kommender Termin gefunden."
+        time_part = "ganztägig" if getattr(ev, "all_day", False) else f"um {ev.start.strftime('%H:%M')}"
+        line = f"Nächster Termin: {_fmt_date(ev.start)} {time_part} — {ev.title}"
+        if ev.location:
+            line += f" ({ev.location})"
+        return line
+
+    if not events:
+        label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(kind, "")
+        return f"Keine Termine {label}.".strip()
+
+    if kind in ("today", "tomorrow"):
+        lines = [f"{_fmt_time_or_allday(ev)} — {ev.title}" for ev in events]
+        return "\n".join(lines)
+
+    # week: group by effective start day (clamped to query_start for
+    # multi-day events that began before the window)
+    lines = []
+    current_day = None
+    for ev in events:
+        effective_start = max(ev.start, query_start) if query_start else ev.start
+        day_key = effective_start.date()
+        if day_key != current_day:
+            if lines:
+                lines.append("")
+            lines.append(_fmt_date(effective_start))
+            current_day = day_key
+        lines.append(f"  {_fmt_time_or_allday(ev)} — {ev.title}")
+    return "\n".join(lines)
+
+
+async def handle_calendar(chat_id, text):
+    bot = Bot(token=TELEGRAM_TOKEN)
+    window = detect_calendar_window(text)
+    if window is None:
+        return
+    kind, start, end = window
+    try:
+        if kind == "next":
+            ev = await asyncio.to_thread(calendar_agent.get_next_event)
+            msg = format_calendar_response("next", ev)
+        else:
+            events = await asyncio.to_thread(calendar_agent.get_events, start, end)
+            msg = format_calendar_response(kind, events, query_start=start)
+        await bot.send_message(chat_id=chat_id, text=msg)
+    except Exception as e:
+        await bot.send_message(chat_id=chat_id, text=f"Kalender-Fehler: {str(e)}")
+
 
 async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False):
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -193,6 +307,10 @@ async def handle_message(update, context):
         project = text[5:].strip()
         await update.message.reply_text(f"Pushe {project} zu GitHub...")
         await git_push(chat_id=chat_id, project=project)
+        return
+
+    if intent == "calendar":
+        await handle_calendar(chat_id=chat_id, text=text)
         return
 
     if intent == "research":
