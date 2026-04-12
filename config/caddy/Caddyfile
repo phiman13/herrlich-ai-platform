@@ -1,0 +1,12 @@
+herrlich.dev {
+    handle /webhook/* {
+        reverse_proxy localhost:9000
+    }
+    handle {
+        respond "OK" 200
+    }
+}
+
+code.herrlich.dev {
+    reverse_proxy localhost:8080
+}
