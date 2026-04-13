@@ -29,6 +29,16 @@ Letzter Stand: 13.04.2026
 - [ ] **SQLite-Gedächtnis-Schicht**
       Persistente Konversations-/Kontext-Memory für Jarvis.
 
+- [ ] **Auto-Sync für Code-Workspaces auf VPS via GitHub Webhook**
+      Heutiger Auto-Pull-Fix gilt nur für `read_project_files()` in
+      Jarvis (Coding-Question-Pfad). Andere Stellen sind weiter
+      drift-anfällig: code-server (VS Code im Browser), direktes
+      Claude Code im VPS-Terminal, parallele Mac-Sessions. Lösung:
+      GitHub Webhook → FastAPI-Endpoint → `git pull` für betroffenes
+      Repo. Wird relevant, sobald regelmäßig parallel auf Mac und
+      VPS gearbeitet wird. Aufwand: 60–90 Min plus HMAC-Validierung
+      und Tests.
+
 ## P3 — Später
 
 - [ ] **MS Graph Phase 4: Schreibender Mail-Zugriff**
