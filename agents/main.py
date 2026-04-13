@@ -12,6 +12,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import anthropic
 
 from calendar_agent import CalendarAgent, BERLIN
+from router import route_with_llm
 
 calendar_agent = CalendarAgent()
 
@@ -32,18 +33,6 @@ bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 WORKSPACE = "/home/claude/workspace"
 processed_updates = set()
-
-def detect_intent(text):
-    t = text.lower()
-    if detect_calendar_window(text) is not None:
-        return "calendar"
-    if any(k in t for k in ["recherchiere", "such im internet", "was ist aktuell", "aktuelle news", "aktuelle entwicklungen"]):
-        return "research"
-    if any(k in t for k in ["code", "projekt", "github", "bug", "fix", "deploy", "test", "recipe", "backlog", "todo", "erstelle", "fixe", "changelog", "roadmap", "füge", "trage ein", "ergänze", "aktualisiere", "remove", "lösche", "delete", "entferne", "pull", "push", "git"]):
-        return "coding"
-    if any(k in t for k in ["meeting", "protokoll", "zusammenfassung", "kunde", "praesentation", "research", "fass", "analysiere"]):
-        return "work"
-    return "personal"
 
 def detect_coding_mode(text):
     t = text.lower()
@@ -154,12 +143,18 @@ def format_calendar_response(kind, events, query_start=None):
     return "\n".join(lines)
 
 
-async def handle_calendar(chat_id, text):
+async def handle_calendar(chat_id, text, kind=None, start=None, end=None):
     bot = Bot(token=TELEGRAM_TOKEN)
-    window = detect_calendar_window(text)
-    if window is None:
-        return
-    kind, start, end = window
+    if start is None or end is None:
+        if kind != "next":
+            window = detect_calendar_window(text)
+            if window is None:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="Konnte das Zeitfenster nicht bestimmen. Bitte konkreter fragen (z.B. 'heute', 'morgen', 'diese Woche', 'nächster Termin').",
+                )
+                return
+            kind, start, end = window
     try:
         if kind == "next":
             ev = await asyncio.to_thread(calendar_agent.get_next_event)
@@ -300,8 +295,6 @@ async def handle_message(update, context):
 
     text = update.message.text
     chat_id = update.message.chat_id
-    intent = detect_intent(text)
-    logger.info(f"Intent: {intent} | Nachricht: {text}")
 
     if text.lower().startswith("push "):
         project = text[5:].strip()
@@ -309,8 +302,18 @@ async def handle_message(update, context):
         await git_push(chat_id=chat_id, project=project)
         return
 
+    result = await route_with_llm(text)
+    intent = result["intent"]
+    params = result["params"]
+    logger.info(f"Intent: {intent} | Nachricht: {text}")
+
     if intent == "calendar":
-        await handle_calendar(chat_id=chat_id, text=text)
+        kind = params.get("kind")
+        start_str = params.get("start")
+        end_str = params.get("end")
+        start = datetime.fromisoformat(start_str) if start_str else None
+        end = datetime.fromisoformat(end_str) if end_str else None
+        await handle_calendar(chat_id=chat_id, text=text, kind=kind, start=start, end=end)
         return
 
     if intent == "research":
@@ -324,8 +327,8 @@ async def handle_message(update, context):
         )
 
     elif intent == "coding":
-        project = extract_project(text)
-        mode = detect_coding_mode(text)
+        project = params.get("project") or extract_project(text)
+        mode = params.get("mode") or detect_coding_mode(text)
         if mode == "action":
             asyncio.create_task(run_claude_code(chat_id=chat_id, project=project, task=text))
         else:
@@ -350,9 +353,24 @@ async def handle_message(update, context):
 
     else:
         await update.message.reply_text("Denke nach...")
+        personal_system = (
+            "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
+            "Wichtig zu deinen Fähigkeiten:\n"
+            "- Du HAST Zugriff auf Philipps Apple-Kalender (über einen eigenen Calendar-Handler). "
+            "Wenn die Frage nach Kalender oder Terminen klingt, antworte: "
+            "\"Diese Frage hätte eigentlich an meinen Calendar-Handler gehen sollen — das war ein "
+            "Routing-Fehler. Bitte stell die Frage nochmal mit klareren Worten wie 'Termine', "
+            "'Kalender' oder 'wann habe ich Zeit'.\"\n"
+            "- Du KANNST im Web recherchieren (über einen Research-Handler).\n"
+            "- Du KANNST Code in Philipps Projekten ändern (über einen Coding-Handler).\n"
+            "- Wenn die Frage zu einem dieser Bereiche passt, sag ehrlich, dass die Anfrage falsch "
+            "geroutet wurde, statt zu halluzinieren.\n"
+            "- Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte "
+            "normal und hilfreich."
+        )
         await ask_claude(
             chat_id=chat_id,
-            system="Du bist Jarvis, persoenlicher KI-Assistent fuer Philipp. Antworte hilfreich auf Deutsch.",
+            system=personal_system,
             user=text,
             model="claude-haiku-4-5-20251001"
         )
