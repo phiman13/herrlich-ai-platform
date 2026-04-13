@@ -6,7 +6,8 @@ import logging
 import asyncio
 import subprocess
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import RedirectResponse, PlainTextResponse
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import anthropic
@@ -404,6 +405,43 @@ async def telegram_webhook(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "jarvis-gateway"}
+
+@app.get("/oauth/microsoft/login")
+async def microsoft_login(secret: str = ""):
+    if secret != os.environ.get("OAUTH_LOGIN_SECRET", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from microsoft_auth import get_login_url
+    import secrets as _secrets
+    state = _secrets.token_urlsafe(16)
+    url = get_login_url(state)
+    return RedirectResponse(url=url, status_code=302)
+
+@app.get("/oauth/microsoft/callback")
+async def microsoft_callback(code: str = "", error: str = "", error_description: str = ""):
+    if error:
+        return PlainTextResponse(
+            f"OAuth-Fehler: {error}\n{error_description}",
+            status_code=400,
+        )
+    if not code:
+        return PlainTextResponse("Kein code-Parameter", status_code=400)
+
+    from microsoft_auth import handle_callback
+    try:
+        result = handle_callback(code)
+        if "access_token" in result:
+            return PlainTextResponse(
+                "✅ Microsoft-Login erfolgreich. Token gespeichert. "
+                "Du kannst dieses Fenster schließen."
+            )
+        return PlainTextResponse(
+            f"⚠️ Token konnte nicht abgerufen werden: "
+            f"{result.get('error_description', 'unbekannter Fehler')}",
+            status_code=500,
+        )
+    except Exception as e:
+        logger.exception("OAuth-Callback fehlgeschlagen")
+        return PlainTextResponse(f"❌ Callback-Fehler: {e}", status_code=500)
 
 @app.on_event("startup")
 async def startup():
