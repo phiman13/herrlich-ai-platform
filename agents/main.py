@@ -51,6 +51,25 @@ def extract_project(text):
 
 def read_project_files(project):
     workspace = f"{WORKSPACE}/{project}"
+    if not os.path.exists(workspace):
+        return ""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", workspace, "pull", "--quiet"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            logger.info(f"Auto-pull OK: {project}")
+        else:
+            logger.warning(
+                f"Auto-pull failed for {project}: {result.stderr.strip()}"
+            )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Auto-pull timeout for {project}")
+    except Exception as e:
+        logger.warning(f"Auto-pull error for {project}: {e}")
+
     context = ""
     for filename in ["BACKLOG.md", "CLAUDE.md", "README.md", "TODO.md"]:
         filepath = os.path.join(workspace, filename)
