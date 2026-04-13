@@ -163,6 +163,104 @@ def format_calendar_response(kind, events, query_start=None):
     return "\n".join(lines)
 
 
+def format_mail_list(mails, header):
+    if not mails:
+        return f"{header}\n\nKeine Mails gefunden."
+    lines = [f"*{header}*\n"]
+    for m in mails:
+        time_str = m.received.astimezone(BERLIN).strftime("%d.%m. %H:%M")
+        unread_marker = "🔵 " if not m.is_read else ""
+        attach_marker = "📎 " if m.has_attachments else ""
+        sender = m.sender_name or m.sender_email or "(unbekannt)"
+        subject = m.subject.replace("*", "").replace("_", "").replace("`", "")[:80]
+        sender_clean = sender.replace("*", "").replace("_", "").replace("`", "")[:40]
+        lines.append(
+            f"{unread_marker}{attach_marker}*{sender_clean}* — {time_str}\n"
+            f"  {subject}"
+        )
+    return "\n\n".join(lines)
+
+
+def format_folder_list(folders):
+    if not folders:
+        return "Keine Ordner gefunden."
+    lines = ["*📁 Mail-Ordner*\n"]
+    for f in folders:
+        unread = f" ({f.unread_count} ungelesen)" if f.unread_count else ""
+        lines.append(f"• {f.name}{unread}")
+    return "\n".join(lines)
+
+
+async def handle_mail(chat_id, text, params):
+    bot = Bot(token=TELEGRAM_TOKEN)
+    from mail_agent import MailAgent
+
+    agent = MailAgent()
+    mode = params.get("mode", "quick_scan")
+    count = params.get("count")
+    sender = params.get("sender")
+    subject_contains = params.get("subject_contains")
+    since_iso = params.get("since_iso")
+    folder_name = params.get("folder_name")
+
+    folder_id = None
+    if folder_name:
+        try:
+            folder = await asyncio.to_thread(agent.find_folder_by_name, folder_name)
+            if folder is None:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"Ordner '{folder_name}' nicht gefunden.",
+                )
+                return
+            folder_id = folder.id
+        except Exception as e:
+            logger.exception("Folder lookup failed")
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"Konnte Ordner nicht abrufen: {e}",
+            )
+            return
+
+    try:
+        if mode == "list_folders":
+            folders = await asyncio.to_thread(agent.list_folders)
+            response = format_folder_list(folders)
+        elif mode == "unread":
+            n = count or 20
+            mails = await asyncio.to_thread(agent.get_unread, n, folder_id)
+            response = format_mail_list(mails, header=f"📬 Ungelesen ({len(mails)})")
+        elif mode == "search":
+            n = count or 25
+            since = datetime.fromisoformat(since_iso) if since_iso else None
+            mails = await asyncio.to_thread(
+                agent.search, sender, subject_contains, since, folder_id, n
+            )
+            header_parts = ["🔍 Suche"]
+            if sender:
+                header_parts.append(f"Absender: {sender}")
+            if subject_contains:
+                header_parts.append(f"Betreff: {subject_contains}")
+            if folder_name:
+                header_parts.append(f"Ordner: {folder_name}")
+            response = format_mail_list(
+                mails, header=" — ".join(header_parts) + f" ({len(mails)})"
+            )
+        else:
+            n = count or 10
+            mails = await asyncio.to_thread(agent.quick_scan, n, folder_id)
+            header = f"📥 Neueste {len(mails)}"
+            if folder_name:
+                header += f" in '{folder_name}'"
+            response = format_mail_list(mails, header=header)
+    except Exception as e:
+        logger.exception("Mail handler failed")
+        await bot.send_message(chat_id=chat_id, text=f"Mail-Fehler: {e}")
+        return
+
+    await bot.send_message(chat_id=chat_id, text=response, parse_mode="Markdown")
+
+
 async def handle_calendar(chat_id, text, kind=None, start=None, end=None):
     bot = Bot(token=TELEGRAM_TOKEN)
     if start is None or end is None:
@@ -334,6 +432,10 @@ async def handle_message(update, context):
         start = datetime.fromisoformat(start_str) if start_str else None
         end = datetime.fromisoformat(end_str) if end_str else None
         await handle_calendar(chat_id=chat_id, text=text, kind=kind, start=start, end=end)
+        return
+
+    if intent == "mail":
+        await handle_mail(chat_id=chat_id, text=text, params=params)
         return
 
     if intent == "research":

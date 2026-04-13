@@ -43,7 +43,32 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
    Parameter: keine
 
-5. "personal" — Allgemeine Fragen, Smalltalk, alles andere.
+5. "mail" — Anfragen zu Outlook-Mails (Posteingang, Ordner, Suche). NUR LESEN, keine Aktionen wie verschieben oder löschen.
+
+   Beispiele:
+   - "Was Wichtiges im Posteingang?"
+   - "Was hab ich verpasst?" / "Ungelesene Mails"
+   - "Hat mir Anna geschrieben?"
+   - "Mails von letzter Woche zum Thema X"
+   - "Was steht im Ordner 'Steuern'?"
+   - "Welche Ordner gibt es?"
+
+   Parameter:
+   - mode: "quick_scan" | "unread" | "search" | "list_folders"
+   - count: integer oder null (Anzahl Mails, default je nach mode)
+   - sender: string oder null (Filter nach Absender, falls genannt)
+   - subject_contains: string oder null (Filter nach Betreff)
+   - since_iso: ISO-8601 datetime oder null (nur Mails ab diesem Zeitpunkt, relativ zu {HEUTE_ISO})
+   - folder_name: string oder null (spezifischer Ordner, falls genannt)
+
+   Mode-Bestimmung:
+   - "Posteingang" / "Was Neues" / "Aktuelle Mails" → quick_scan
+   - "Ungelesene" / "Was hab ich verpasst" / "Was ist neu" → unread
+   - "Hat mir X geschrieben" / "Mails von X" / "zum Thema Y" → search
+   - "Welche Ordner" / "Liste meiner Ordner" → list_folders
+   - Ordnerangaben wie "im Ordner X" setzen folder_name, mode bleibt je nach Hauptfrage
+
+6. "personal" — Allgemeine Fragen, Smalltalk, alles andere.
    Beispiele: "Wie geht's dir?", "Erklär mir Photosynthese", "Was hältst du von..."
 
    Parameter: keine
@@ -51,7 +76,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "personal",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -99,7 +124,7 @@ async def route_with_llm(text: str) -> dict:
         for field in ("intent", "confidence", "params", "reasoning"):
             if field not in parsed:
                 raise ValueError(f"missing field: {field}")
-        if parsed["intent"] not in {"calendar", "coding", "research", "work", "personal"}:
+        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal"}:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed
     except (json.JSONDecodeError, ValueError) as e:
