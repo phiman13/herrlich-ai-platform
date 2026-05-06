@@ -38,3 +38,4 @@ urllib3-future==2.19.906
 uvicorn==0.44.0
 wassima==2.0.6
 x-wr-timezone==2.0.1
+feedparser>=6.0.10
