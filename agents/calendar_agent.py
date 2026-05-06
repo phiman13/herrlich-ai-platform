@@ -178,6 +178,44 @@ class ICloudCalDAVBackend(CalendarBackend):
         )
         return events
 
+    def create_event(
+        self,
+        title: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        calendar_name: Optional[str] = None,
+    ) -> None:
+        """Create a new VEVENT in the specified calendar (or first whitelisted calendar)."""
+        import uuid
+        from icalendar import Calendar as ICalendar, Event as IEvent
+
+        self._connect()
+        if not self._calendars:
+            raise RuntimeError("Keine Kalender verfügbar")
+
+        target = None
+        if calendar_name:
+            for cal in self._calendars:
+                if (cal.name or "").strip().lower() == calendar_name.lower():
+                    target = cal
+                    break
+        if target is None:
+            target = self._calendars[0]
+
+        ical = ICalendar()
+        ical.add("prodid", "-//Jarvis//EN")
+        ical.add("version", "2.0")
+
+        event = IEvent()
+        event.add("summary", title)
+        event.add("dtstart", start_dt)
+        event.add("dtend", end_dt)
+        event.add("uid", str(uuid.uuid4()))
+
+        ical.add_component(event)
+        target.save_event(ical.to_ical().decode("utf-8"))
+        logger.info("Termin erstellt: '%s' in '%s' (%s)", title, target.name, start_dt.isoformat())
+
 
 class CalendarAgent:
     """Aggregates events from multiple backends and exposes a stable API."""
@@ -280,3 +318,22 @@ class CalendarAgent:
                         title = str(component.get("summary") or "(ohne Titel)")
                         reminders.append(title)
         return reminders
+
+    def get_calendar_names(self) -> list[str]:
+        """Return whitelisted calendar names from env."""
+        raw = os.environ.get("CALENDAR_WHITELIST", "")
+        return [w.strip() for w in raw.split(",") if w.strip()]
+
+    def create_event(
+        self,
+        title: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        calendar_name: Optional[str] = None,
+    ) -> None:
+        """Create event on first available backend that supports it."""
+        for backend in self.backends:
+            if hasattr(backend, "create_event"):
+                backend.create_event(title, start_dt, end_dt, calendar_name=calendar_name)
+                return
+        raise RuntimeError("Kein Backend mit create_event verfügbar")

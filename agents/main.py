@@ -222,8 +222,27 @@ async def handle_mail(chat_id, text, params):
     await bot.send_message(chat_id=chat_id, text=response, parse_mode="Markdown")
 
 
-async def handle_calendar(chat_id, text, kind=None, start=None, end=None):
+async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="read", title=None, calendar_name=None):
     bot = Bot(token=TELEGRAM_TOKEN)
+
+    if mode == "write":
+        if not title or not start:
+            await bot.send_message(chat_id=chat_id, text="Bitte Titel und Startzeit angeben.")
+            return
+        if end is None:
+            end = start + timedelta(hours=1)
+        try:
+            await asyncio.to_thread(calendar_agent.create_event, title, start, end, calendar_name)
+            cal_note = f" in '{calendar_name}'" if calendar_name else ""
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ Termin erstellt{cal_note}: *{title}*\n{start.strftime('%d.%m.%Y %H:%M')} – {end.strftime('%H:%M')}",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            await bot.send_message(chat_id=chat_id, text=f"❌ Termin konnte nicht erstellt werden: {e}")
+        return
+
     if start is None or end is None:
         if kind != "next":
             window = detect_calendar_window(text)
@@ -323,12 +342,18 @@ async def handle_message(update, context):
     logger.info(f"Intent: {intent} | Nachricht: {text}")
 
     if intent == "calendar":
+        mode = params.get("mode", "read")
         kind = params.get("kind")
         start_str = params.get("start")
         end_str = params.get("end")
         start = datetime.fromisoformat(start_str) if start_str else None
         end = datetime.fromisoformat(end_str) if end_str else None
-        await handle_calendar(chat_id=chat_id, text=text, kind=kind, start=start, end=end)
+        title = params.get("title")
+        calendar_name = params.get("calendar_name")
+        await handle_calendar(
+            chat_id=chat_id, text=text, kind=kind, start=start, end=end,
+            mode=mode, title=title, calendar_name=calendar_name,
+        )
         return
 
     if intent == "mail":
