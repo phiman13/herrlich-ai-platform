@@ -2,11 +2,20 @@ herrlich.dev {
     handle /webhook/* {
         reverse_proxy localhost:9000
     }
+    handle /oauth/* {
+        reverse_proxy localhost:9000
+    }
     handle {
-        respond "OK" 200
+        root * /var/www/herrlich.dev
+        try_files {path} /index.html
+        file_server
     }
 }
 
 code.herrlich.dev {
     reverse_proxy localhost:8080
+}
+
+refurbish.herrlich.dev {
+    reverse_proxy localhost:8002
 }
