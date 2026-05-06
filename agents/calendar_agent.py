@@ -243,3 +243,40 @@ class CalendarAgent:
             if ev.start >= now:
                 return ev
         return None
+
+    def get_reminders_today(self) -> list[str]:
+        from datetime import date
+        today = date.today()
+        reminders = []
+        for backend in self.backends:
+            if not isinstance(backend, ICloudCalDAVBackend):
+                continue
+            try:
+                backend._connect()
+            except Exception as e:
+                logger.warning("CalDAV connect failed for reminders: %s", e)
+                continue
+            for cal in backend._calendars or []:
+                try:
+                    results = cal.search(todo=True)
+                except Exception as e:
+                    logger.warning("VTODO search failed for '%s': %s", cal.name, e)
+                    continue
+                for item in results:
+                    try:
+                        ical = item.icalendar_instance
+                    except Exception:
+                        continue
+                    for component in ical.walk("VTODO"):
+                        status = str(component.get("status") or "").upper()
+                        if status in ("COMPLETED", "CANCELLED"):
+                            continue
+                        due_prop = component.get("due")
+                        if due_prop is not None:
+                            due = due_prop.dt
+                            due_date = due if isinstance(due, date) and not isinstance(due, datetime) else due.date()
+                            if due_date != today:
+                                continue
+                        title = str(component.get("summary") or "(ohne Titel)")
+                        reminders.append(title)
+        return reminders
