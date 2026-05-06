@@ -11,10 +11,18 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import anthropic
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from calendar_agent import CalendarAgent, BERLIN
 from router import route_with_llm
 from coding_agent import handle_coding_query, run_coding_action, add_backlog_item
 from vps import list_projects
+from briefing_agent import build_briefing
+from news_agent import get_ai_news
+from tasks_agent import get_tasks, add_task, complete_task
+
+_scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
 calendar_agent = CalendarAgent()
 
@@ -265,6 +273,19 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
     except Exception as e:
         await bot.send_message(chat_id=chat_id, text=f"Fehler: {str(e)}")
 
+async def send_briefing():
+    chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not chat_id_str:
+        logger.warning("TELEGRAM_CHAT_ID nicht gesetzt — Briefing übersprungen")
+        return
+    bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+    try:
+        msg = await build_briefing()
+        await bot.send_message(chat_id=int(chat_id_str), text=msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.exception(f"Briefing-Fehler: {e}")
+
+
 async def start(update, context):
     await update.message.reply_text(
         "Hallo Philipp! Ich bin Jarvis.\n\n"
@@ -356,6 +377,52 @@ async def handle_message(update, context):
             model="claude-sonnet-4-6",
             use_web_search=True
         )
+
+    elif intent == "news":
+        await update.message.reply_text("📰 Lade AI-News...")
+        news = await asyncio.to_thread(get_ai_news, 48, 10)
+        await update.message.reply_text(
+            f"📰 *AI NEWS — letzte 48h*\n\n{news or 'Keine News gefunden.'}",
+            parse_mode="Markdown",
+        )
+
+    elif intent == "tasks":
+        mode = params.get("mode", "read")
+        list_name = params.get("list_name")
+        item = params.get("item")
+
+        if mode == "read":
+            result = await asyncio.to_thread(get_tasks, list_name)
+            await update.message.reply_text(result or "Keine offenen Tasks.", parse_mode="Markdown")
+
+        elif mode == "write" and item:
+            if not list_name:
+                await update.message.reply_text("Welche Liste? (z.B. 'Einkaufsliste')")
+            else:
+                success = await asyncio.to_thread(add_task, list_name, item)
+                if success:
+                    await update.message.reply_text(
+                        f"✅ '{item}' zu *{list_name}* hinzugefügt.", parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text("❌ Konnte Task nicht hinzufügen.")
+
+        elif mode == "complete" and item:
+            if not list_name:
+                await update.message.reply_text("Welche Liste?")
+            else:
+                success = await asyncio.to_thread(complete_task, list_name, item)
+                if success:
+                    await update.message.reply_text(
+                        f"✅ '{item}' in *{list_name}* als erledigt markiert.", parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text("❌ Task nicht gefunden oder bereits erledigt.")
+
+    elif intent == "briefing":
+        await update.message.reply_text("⏳ Briefing wird erstellt...")
+        msg = await build_briefing()
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
     else:
         await update.message.reply_text("Denke nach...")
@@ -457,10 +524,20 @@ async def startup():
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     from telegram.ext import CallbackQueryHandler
     bot_app.add_handler(CallbackQueryHandler(handle_callback))
+    _scheduler.add_job(
+        send_briefing,
+        CronTrigger(hour=7, minute=0, timezone="Europe/Berlin"),
+        id="morning_briefing",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("APScheduler gestartet — Briefing täglich 07:00 Berlin")
     await bot_app.initialize()
     await bot_app.start()
     logger.info("Jarvis gestartet")
 
 @app.on_event("shutdown")
 async def shutdown():
+    if _scheduler.running:
+        _scheduler.shutdown(wait=False)
     await bot_app.stop()
