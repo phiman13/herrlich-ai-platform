@@ -1,4 +1,5 @@
 # agents/tasks_agent.py
+import difflib
 import logging
 
 import httpx
@@ -24,10 +25,24 @@ def _get_lists() -> list[dict]:
 
 
 def _find_list_id(list_name: str) -> str | None:
-    for lst in _get_lists():
-        if lst["displayName"].lower() == list_name.lower():
+    lists = _get_lists()
+    norm = list_name.lower()
+    # exact match
+    for lst in lists:
+        if lst["displayName"].lower() == norm:
             return lst["id"]
-    return None
+    # substring match (e.g. "Einkaufsliste" contains "Einkaufen")
+    for lst in lists:
+        display = lst["displayName"].lower()
+        if norm in display or display in norm:
+            return lst["id"]
+    # fuzzy match — best ratio above 0.6
+    best_ratio, best_id = 0.0, None
+    for lst in lists:
+        ratio = difflib.SequenceMatcher(None, norm, lst["displayName"].lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio, best_id = ratio, lst["id"]
+    return best_id if best_ratio >= 0.6 else None
 
 
 def get_tasks(list_name: str | None = None) -> str:

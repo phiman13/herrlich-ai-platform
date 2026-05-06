@@ -8,7 +8,7 @@ except ImportError:
     from tasks_agent import get_tasks, add_task, complete_task, _find_list_id
 
 _LISTS = [
-    {"id": "list1", "displayName": "Einkaufsliste"},
+    {"id": "list1", "displayName": "Einkaufen"},
     {"id": "list2", "displayName": "Arbeit"},
 ]
 _TASKS = [
@@ -64,6 +64,28 @@ def test_complete_task_patches():
          patch("agents.tasks_agent.get_access_token", return_value="tok"), \
          patch("httpx.patch") as mock_patch:
         mock_patch.return_value = MagicMock(raise_for_status=MagicMock())
-        result = complete_task("Einkaufsliste", "Milch")
+        result = complete_task("Einkaufen", "Milch")
     assert result is True
     mock_patch.assert_called_once()
+
+
+def test_find_list_id_fuzzy_match():
+    """'Einkaufsliste' soll 'Einkaufen' matchen (substring)."""
+    with patch("agents.tasks_agent._get_lists", return_value=_LISTS), \
+         patch("agents.tasks_agent.get_access_token", return_value="tok"):
+        result = _find_list_id("Einkaufsliste")
+    assert result == "list1"
+
+
+def test_find_list_id_exact_match():
+    with patch("agents.tasks_agent._get_lists", return_value=_LISTS), \
+         patch("agents.tasks_agent.get_access_token", return_value="tok"):
+        result = _find_list_id("Arbeit")
+    assert result == "list2"
+
+
+def test_find_list_id_no_match():
+    with patch("agents.tasks_agent._get_lists", return_value=_LISTS), \
+         patch("agents.tasks_agent.get_access_token", return_value="tok"):
+        result = _find_list_id("Komplett unbekannt xyz")
+    assert result is None

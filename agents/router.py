@@ -2,9 +2,11 @@ import json
 import logging
 import asyncio
 import re
+import time
 from datetime import datetime
 
 import anthropic
+import httpx
 
 from calendar_agent import BERLIN
 try:
@@ -17,11 +19,42 @@ _claude = anthropic.Anthropic()
 
 _project_list_cache: list[str] = []
 
+# Context cache: (value, fetched_at_timestamp)
+_todo_lists_cache: tuple[list[str], float] = ([], 0.0)
+_TODO_CACHE_TTL = 1800  # 30 min
+
+
 async def _get_project_list() -> list[str]:
     global _project_list_cache
     if not _project_list_cache:
         _project_list_cache = await _list_projects()
     return _project_list_cache
+
+
+async def _get_todo_list_names() -> list[str]:
+    global _todo_lists_cache
+    names, fetched_at = _todo_lists_cache
+    if names and (time.time() - fetched_at) < _TODO_CACHE_TTL:
+        return names
+    try:
+        def _fetch():
+            try:
+                from microsoft_auth import get_access_token
+            except ImportError:
+                from agents.microsoft_auth import get_access_token
+            token = get_access_token()
+            resp = httpx.get(
+                "https://graph.microsoft.com/v1.0/me/todo/lists",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            return [lst["displayName"] for lst in resp.json().get("value", [])]
+        names = await asyncio.to_thread(_fetch)
+        _todo_lists_cache = (names, time.time())
+    except Exception as e:
+        logger.debug(f"To-Do-Listen nicht abrufbar: {e}")
+    return names
 
 _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen KI-Assistenten von Philipp. Klassifiziere die User-Nachricht in genau einen der folgenden Intents und extrahiere relevante Parameter. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Markdown-Codeblock, ohne erklärenden Text.
 
@@ -103,9 +136,11 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 8. "tasks" — MS To Do Tasks lesen oder schreiben.
    Beispiele: "Was steht auf meiner Einkaufsliste?", "Füge Milch zur Einkaufsliste hinzu", "Erledigte Tasks anzeigen", "Zeig mir alle To Do Listen"
 
+   Echte MS To Do Listennamen (verwende diese exakten Namen als list_name): {TODO_LISTS}
+
    Parameter:
    - mode: "read" | "write" | "complete"
-   - list_name: string oder null (Listenname, z.B. "Einkaufsliste")
+   - list_name: string oder null — MUSS einem der echten Listennamen oben entsprechen, nicht dem was der User sagt
    - item: string oder null (Task-Text, nur bei mode=write)
 
 9. "briefing" — Morning Briefing abrufen: Kalender, Wetter, Mail, News, Tasks, GitHub.
@@ -137,12 +172,17 @@ _FALLBACK = {
 
 async def _build_system_prompt() -> str:
     heute = datetime.now(BERLIN).strftime("%Y-%m-%d")
-    project_list = await _get_project_list()
+    project_list, todo_names = await asyncio.gather(
+        _get_project_list(),
+        _get_todo_list_names(),
+    )
     projects_str = ", ".join(project_list) if project_list else "recipe-app"
+    todo_str = ", ".join(todo_names) if todo_names else "(nicht verfügbar)"
     return (
         _SYSTEM_TEMPLATE
         .replace("{HEUTE_ISO}", heute)
         .replace("{PROJECT_LIST}", projects_str)
+        .replace("{TODO_LISTS}", todo_str)
     )
 
 
