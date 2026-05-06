@@ -1,5 +1,6 @@
 # agents/coding_agent.py
 import asyncio
+import difflib
 import json
 import logging
 import os
@@ -47,6 +48,27 @@ async def _ensure_init():
             _initialized = True
 
 
+def _resolve_project(name: str, projects: list[str]) -> str | None:
+    """Return the best-matching project name, or None if no good match."""
+    norm = name.lower()
+    # exact
+    for p in projects:
+        if p.lower() == norm:
+            return p
+    # substring
+    for p in projects:
+        pl = p.lower()
+        if norm in pl or pl in norm:
+            return p
+    # fuzzy
+    best_ratio, best = 0.0, None
+    for p in projects:
+        ratio = difflib.SequenceMatcher(None, norm, p.lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio, best = ratio, p
+    return best if best_ratio >= 0.6 else None
+
+
 async def _check_and_clone(project: str) -> str:
     """Check GitHub and clone if not archived. Returns: 'cloned'|'archived'|'not_found'|'error'"""
     import json as _json
@@ -82,6 +104,10 @@ async def handle_coding_query(project: str, query_type: str) -> str:
     """Fast path: read files/git directly, no Claude Code needed."""
     await _ensure_init()
     projects = await list_projects()
+    resolved = _resolve_project(project, projects)
+    if resolved and resolved != project:
+        logger.info(f"Projekt '{project}' → '{resolved}' (fuzzy match)")
+        project = resolved
     if project not in projects:
         status = await _check_and_clone(project)
         if status == "cloned":
@@ -179,6 +205,10 @@ async def add_backlog_item(project: str, item: str, priority: str = "P1") -> boo
     """Add a new item to BACKLOG.md under the given priority section."""
     await _ensure_init()
     projects = await list_projects()
+    resolved = _resolve_project(project, projects)
+    if resolved and resolved != project:
+        logger.info(f"Projekt '{project}' → '{resolved}' (fuzzy match)")
+        project = resolved
     if project not in projects:
         status = await _check_and_clone(project)
         if status != "cloned":
@@ -214,6 +244,10 @@ async def run_coding_action(task: str, project: str, chat_id: int):
     bot = Bot(token=TELEGRAM_TOKEN)
 
     projects = await list_projects()
+    resolved = _resolve_project(project, projects)
+    if resolved and resolved != project:
+        logger.info(f"Projekt '{project}' → '{resolved}' (fuzzy match)")
+        project = resolved
     if project not in projects:
         status = await _check_and_clone(project)
         if status == "cloned":
