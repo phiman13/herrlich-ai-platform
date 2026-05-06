@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import pwd
+from pathlib import Path
 
 logger = logging.getLogger("jarvis.vps")
 
@@ -29,6 +30,15 @@ async def run_as_claude(cmd: list[str], cwd: str | None = None) -> tuple[int, st
         return -1, "", str(e)
 
 
+def _safe_path(project: str, filename: str) -> str | None:
+    """Returns resolved path if safe, None if path traversal detected."""
+    base = Path(WORKSPACE).resolve()
+    target = (base / project / filename).resolve()
+    if not str(target).startswith(str(base)):
+        return None
+    return str(target)
+
+
 async def list_projects() -> list[str]:
     """List available projects in the workspace."""
     rc, stdout, _ = await run_as_claude(["ls", WORKSPACE])
@@ -39,7 +49,10 @@ async def list_projects() -> list[str]:
 
 async def read_file(project: str, filename: str) -> str | None:
     """Read a file from a project workspace. Returns None if not found."""
-    path = f"{WORKSPACE}/{project}/{filename}"
+    path = _safe_path(project, filename)
+    if path is None:
+        logger.warning(f"Path traversal attempt: {project}/{filename}")
+        return None
     rc, stdout, _ = await run_as_claude(["cat", path])
     return stdout if rc == 0 else None
 
@@ -60,15 +73,21 @@ async def git_pull(project: str) -> bool:
 
 async def write_file_and_commit(project: str, filename: str, content: str, commit_msg: str) -> bool:
     """Write a file and commit it. Used for backlog edits."""
-    path = f"{WORKSPACE}/{project}/{filename}"
+    path = _safe_path(project, filename)
+    if path is None:
+        logger.warning(f"Path traversal attempt: {project}/{filename}")
+        return False
     cwd = f"{WORKSPACE}/{project}"
 
     try:
         with open(path, "w") as f:
             f.write(content)
-        uid = pwd.getpwnam(CLAUDE_USER).pw_uid
-        gid = pwd.getpwnam(CLAUDE_USER).pw_gid
-        os.chown(path, uid, gid)
+        try:
+            pw = pwd.getpwnam(CLAUDE_USER)
+            os.chown(path, pw.pw_uid, pw.pw_gid)
+        except KeyError:
+            logger.error(f"User '{CLAUDE_USER}' not found on system")
+            return False
     except Exception as e:
         logger.error(f"write_file failed: {e}")
         return False
