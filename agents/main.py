@@ -4,7 +4,6 @@ import sys
 import json
 import logging
 import asyncio
-import subprocess
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, PlainTextResponse
@@ -14,6 +13,8 @@ import anthropic
 
 from calendar_agent import CalendarAgent, BERLIN
 from router import route_with_llm
+from coding_agent import handle_coding_query, run_coding_action, add_backlog_item
+from vps import list_projects
 
 calendar_agent = CalendarAgent()
 
@@ -32,55 +33,7 @@ claude = anthropic.Anthropic()
 app = FastAPI()
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-WORKSPACE = "/home/claude/workspace"
 processed_updates = set()
-
-def detect_coding_mode(text):
-    t = text.lower()
-    if any(k in t for k in ["fixe", "baue", "erstelle", "implementiere", "refactor", "schreibe", "loesche", "aendere", "update", "add", "remove", "changelog", "roadmap", "füge", "trage ein", "ergänze", "aktualisiere", "lösche", "delete", "entferne"]):
-        return "action"
-    return "question"
-
-def extract_project(text):
-    if not os.path.exists(WORKSPACE):
-        return "recipe-app"
-    projects = os.listdir(WORKSPACE)
-    for p in projects:
-        if p.lower() in text.lower():
-            return p
-    return projects[0] if projects else "recipe-app"
-
-def read_project_files(project):
-    workspace = f"{WORKSPACE}/{project}"
-    if not os.path.exists(workspace):
-        return ""
-
-    try:
-        result = subprocess.run(
-            ["git", "-C", workspace, "pull", "--quiet"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            logger.info(f"Auto-pull OK: {project}")
-        else:
-            logger.warning(
-                f"Auto-pull failed for {project}: {result.stderr.strip()}"
-            )
-    except subprocess.TimeoutExpired:
-        logger.warning(f"Auto-pull timeout for {project}")
-    except Exception as e:
-        logger.warning(f"Auto-pull error for {project}: {e}")
-
-    context = ""
-    for filename in ["BACKLOG.md", "CLAUDE.md", "README.md", "TODO.md"]:
-        filepath = os.path.join(workspace, filename)
-        if os.path.exists(filepath):
-            with open(filepath, "r") as f:
-                content = f.read()
-            if len(content) > 3000:
-                content = content[:3000] + "\n[gekuerzt]"
-            context += f"\n\n### {filename}:\n{content}"
-    return context
 
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
@@ -312,91 +265,11 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
     except Exception as e:
         await bot.send_message(chat_id=chat_id, text=f"Fehler: {str(e)}")
 
-async def run_claude_code(chat_id, project, task):
-    bot = Bot(token=TELEGRAM_TOKEN)
-    workspace = f"{WORKSPACE}/{project}"
-
-    if not os.path.exists(workspace):
-        await bot.send_message(chat_id=chat_id, text=f"Projekt '{project}' nicht gefunden.")
-        return
-
-    await bot.send_message(chat_id=chat_id, text=f"Claude Code startet in {project}...\nAufgabe: {task}")
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "sudo", "-u", "claude",
-            "bash", "-c",
-            f"cd {workspace} && PATH=/home/claude/.npm-global/bin:$PATH claude --dangerously-skip-permissions -p '{task}' --verbose --output-format stream-json",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
-        output = stdout.decode("utf-8", errors="replace").strip()
-
-        result_text = ""
-        for line in output.split("\n"):
-            try:
-                data = json.loads(line)
-                if data.get("type") == "result":
-                    result_text = data.get("result", "")
-            except:
-                pass
-
-        if process.returncode == 0:
-            msg = f"Aufgabe abgeschlossen in {project}."
-            if result_text:
-                if len(result_text) > 3000:
-                    result_text = result_text[:3000] + "\n[...]"
-                msg += f"\n\n{result_text}"
-            await bot.send_message(chat_id=chat_id, text=msg)
-
-            diff = subprocess.run(
-                ["sudo", "-u", "claude", "git", "diff", "--stat"],
-                cwd=workspace, capture_output=True, text=True
-            )
-            if diff.stdout.strip() and len(diff.stdout) < 3000:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"Geaenderte Dateien:\n{diff.stdout.strip()}\n\nSag 'push {project}' zum Pushen."
-                )
-        else:
-            error = stderr.decode("utf-8", errors="replace").strip()
-            await bot.send_message(chat_id=chat_id, text=f"Fehler:\n{error[:1000] if error else 'Unbekannter Fehler'}")
-
-    except asyncio.TimeoutError:
-        process.kill()
-        await bot.send_message(chat_id=chat_id, text="Timeout nach 5 Minuten.")
-    except Exception as e:
-        await bot.send_message(chat_id=chat_id, text=f"Fehler: {str(e)}")
-
-async def git_push(chat_id, project):
-    bot = Bot(token=TELEGRAM_TOKEN)
-    workspace = f"{WORKSPACE}/{project}"
-    try:
-        subprocess.run(["sudo", "-u", "claude", "git", "pull", "--rebase", "origin", "main"], cwd=workspace)
-        subprocess.run(["sudo", "-u", "claude", "git", "add", "-A"], cwd=workspace)
-        result_commit = subprocess.run(
-            ["sudo", "-u", "claude", "git", "commit", "-m", "feat: Claude Code changes via Jarvis"],
-            cwd=workspace, capture_output=True, text=True
-        )
-        if "nothing to commit" in result_commit.stdout:
-            await bot.send_message(chat_id=chat_id, text="Nichts zu pushen.")
-            return
-        result = subprocess.run(["sudo", "-u", "claude", "git", "push"], cwd=workspace, capture_output=True, text=True)
-        if result.returncode == 0:
-            await bot.send_message(chat_id=chat_id, text="Gepusht zu GitHub.")
-        else:
-            await bot.send_message(chat_id=chat_id, text=f"Push fehlgeschlagen:\n{result.stderr}")
-    except Exception as e:
-        await bot.send_message(chat_id=chat_id, text=f"Fehler: {str(e)}")
-
 async def start(update, context):
     await update.message.reply_text(
         "Hallo Philipp! Ich bin Jarvis.\n\n"
         "Coding (Frage): 'Was sind die Todos in recipe-app?'\n"
         "Coding (Aktion): 'Fixe den Login-Bug in recipe-app'\n"
-        "Push: 'push recipe-app'\n"
         "Research: 'Recherchiere: ESG Pflichten 2026'\n"
         "Work: 'Fass mir diesen Text zusammen'\n"
         "Personal: 'Was sind gute Laufschuhe?'"
@@ -413,12 +286,6 @@ async def handle_message(update, context):
 
     text = update.message.text
     chat_id = update.message.chat_id
-
-    if text.lower().startswith("push "):
-        project = text[5:].strip()
-        await update.message.reply_text(f"Pushe {project} zu GitHub...")
-        await git_push(chat_id=chat_id, project=project)
-        return
 
     result = await route_with_llm(text)
     intent = result["intent"]
@@ -449,19 +316,36 @@ async def handle_message(update, context):
         )
 
     elif intent == "coding":
-        project = params.get("project") or extract_project(text)
-        mode = params.get("mode") or detect_coding_mode(text)
-        if mode == "action":
-            asyncio.create_task(run_claude_code(chat_id=chat_id, project=project, task=text))
-        else:
-            await update.message.reply_text(f"Analysiere {project}...")
-            project_context = read_project_files(project)
-            await ask_claude(
-                chat_id=chat_id,
-                system="Du bist Jarvis, KI-Assistent fuer Philipp. Antworte auf Deutsch.",
-                user=f"Projektdateien von '{project}':\n{project_context}\n\nFrage: {text}",
-                model="claude-haiku-4-5-20251001"
+        mode = params.get("mode", "action")
+        project = params.get("project")
+
+        if not project:
+            projects = await list_projects()
+            project = projects[0] if projects else "recipe-app"
+
+        if mode == "query":
+            query_type = params.get("query_type", "backlog")
+            await update.message.reply_text("🔍 Lese...")
+            result = await handle_coding_query(project, query_type)
+            await update.message.reply_text(
+                f"📁 *{project}* — {query_type}\n\n{result[:4000]}",
+                parse_mode="Markdown",
             )
+
+        elif mode == "backlog_write":
+            item = params.get("backlog_item", text)
+            priority = params.get("backlog_priority", "P1")
+            success = await add_backlog_item(project, item, priority)
+            if success:
+                await update.message.reply_text(
+                    f"✅ Backlog-Item hinzugefügt in *{project}*:\n_{item}_",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text("❌ Konnte Backlog nicht aktualisieren.")
+
+        else:  # action
+            asyncio.create_task(run_coding_action(text, project, chat_id))
 
     elif intent == "work":
         await update.message.reply_text("Analysiere...")
@@ -547,6 +431,10 @@ async def microsoft_callback(code: str = "", error: str = "", error_description:
 
 @app.on_event("startup")
 async def startup():
+    from coding_agent import _ensure_init
+    await _ensure_init()
+    projects = await list_projects()
+    logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     await bot_app.initialize()
