@@ -1,9 +1,10 @@
 #!/bin/bash
-set -e
+set -eo pipefail
+trap 'echo "ERROR at line $LINENO" >&2; exit 1' ERR
 
 WORKSPACE="/home/claude/workspace"
 GITHUB_USER="phiman13"
-REPOS="recipe-app immo-radar refurbish-business herrlich-dev herrlich-ai-platform"
+REPOS=(recipe-app immo-radar refurbish-business herrlich-dev herrlich-ai-platform)
 
 echo "=== Workspace Setup ==="
 
@@ -26,7 +27,7 @@ mkdir -p "$WORKSPACE"
 chown claude:claude "$WORKSPACE"
 
 # Repos klonen oder updaten
-for REPO in $REPOS; do
+for REPO in "${REPOS[@]}"; do
     TARGET="$WORKSPACE/$REPO"
     if [ -d "$TARGET/.git" ]; then
         echo "  UPDATE: $REPO"
@@ -55,9 +56,11 @@ for ARTIFACT in "600" "700" "77" "CHMOD" "ECHO" "=2.1"; do
     fi
 done
 # SSH-Key-Fragment Verzeichnis
+shopt -s nullglob
 for D in /root/AAAA*; do
-    [ -e "$D" ] && rm -rf "$D" && echo "  REMOVED: $D"
+    rm -rf "$D" && echo "  REMOVED: $D"
 done
+shopt -u nullglob
 
 echo "=== Done ==="
 sudo -u claude ls "$WORKSPACE"
