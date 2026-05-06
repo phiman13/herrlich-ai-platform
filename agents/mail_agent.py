@@ -5,6 +5,11 @@ from typing import Optional
 
 import requests
 
+try:
+    from microsoft_auth import get_access_token
+except ImportError:
+    from agents.microsoft_auth import get_access_token
+
 logger = logging.getLogger("jarvis.mail")
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
@@ -38,7 +43,6 @@ class MailAgent:
         self.logger = logging.getLogger("jarvis.mail")
 
     def _get_headers(self) -> dict:
-        from microsoft_auth import get_access_token
         token = get_access_token()
         return {
             "Authorization": f"Bearer {token}",
@@ -191,3 +195,29 @@ class MailAgent:
             mails = [m for m in mails if m.received >= since]
 
         return mails
+
+    def send_mail(self, to_email: str, subject: str, body: str) -> bool:
+        """Send mail via MS Graph POST /me/sendMail. Returns True on success."""
+        payload = {
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "Text", "content": body},
+                "toRecipients": [
+                    {"emailAddress": {"address": to_email}}
+                ],
+            },
+            "saveToSentItems": "true",
+        }
+        try:
+            r = requests.post(
+                f"{GRAPH_BASE}/me/sendMail",
+                headers=self._get_headers(),
+                json=payload,
+                timeout=15,
+            )
+            r.raise_for_status()
+            self.logger.info("Mail gesendet an %s", to_email)
+            return True
+        except Exception as e:
+            self.logger.error("send_mail fehlgeschlagen: %s", e)
+            return False

@@ -42,6 +42,7 @@ app = FastAPI()
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 processed_updates = set()
+_pending_mail_drafts: dict[int, dict] = {}
 
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
@@ -156,8 +157,47 @@ async def handle_mail(chat_id, text, params):
     bot = Bot(token=TELEGRAM_TOKEN)
     from mail_agent import MailAgent
 
-    agent = MailAgent()
     mode = params.get("mode", "quick_scan")
+
+    if mode == "compose":
+        to_email = params.get("to_email", "")
+        subject = params.get("subject", "(kein Betreff)")
+        body = params.get("body", "")
+
+        if not to_email or "@" not in to_email:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="Empfänger-Adresse fehlt oder ist ungültig. Bitte nochmal mit vollständiger E-Mail-Adresse.",
+            )
+            return
+
+        _pending_mail_drafts[chat_id] = {
+            "to_email": to_email,
+            "subject": subject,
+            "body": body,
+        }
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = [[
+            InlineKeyboardButton("📤 Senden", callback_data="mail:send"),
+            InlineKeyboardButton("❌ Abbrechen", callback_data="mail:cancel"),
+        ]]
+
+        preview = (
+            f"📝 *Entwurf*\n\n"
+            f"*An:* {to_email}\n"
+            f"*Betreff:* {subject}\n\n"
+            f"{body}"
+        )
+        await bot.send_message(
+            chat_id=chat_id,
+            text=preview,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    agent = MailAgent()
     count = params.get("count")
     sender = params.get("sender")
     subject_contains = params.get("subject_contains")
@@ -546,6 +586,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(f"❌ Push fehlgeschlagen für {project}.")
     elif data == "dismiss":
         await query.edit_message_reply_markup(reply_markup=None)
+
+    elif data == "mail:send":
+        chat_id = query.message.chat_id
+        draft = _pending_mail_drafts.pop(chat_id, None)
+        if draft is None:
+            await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
+            return
+        from mail_agent import MailAgent
+        agent = MailAgent()
+        success = await asyncio.to_thread(
+            agent.send_mail, draft["to_email"], draft["subject"], draft["body"]
+        )
+        if success:
+            await query.edit_message_text(
+                f"✅ Mail gesendet an *{draft['to_email']}*.",
+                parse_mode="Markdown",
+            )
+        else:
+            await query.edit_message_text("❌ Mail konnte nicht gesendet werden.")
+
+    elif data == "mail:cancel":
+        chat_id = query.message.chat_id
+        _pending_mail_drafts.pop(chat_id, None)
+        await query.edit_message_text("❌ Entwurf verworfen.")
 
 
 @app.on_event("startup")
