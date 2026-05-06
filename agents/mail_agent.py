@@ -206,7 +206,7 @@ class MailAgent:
                     {"emailAddress": {"address": to_email}}
                 ],
             },
-            "saveToSentItems": "true",
+            "saveToSentItems": True,
         }
         try:
             r = requests.post(
