@@ -199,6 +199,8 @@ class ICloudCalDAVBackend(CalendarBackend):
                 if (cal.name or "").strip().lower() == calendar_name.lower():
                     target = cal
                     break
+            if target is None:
+                raise ValueError(f"Kalender '{calendar_name}' nicht gefunden")
         if target is None:
             target = self._calendars[0]
 
