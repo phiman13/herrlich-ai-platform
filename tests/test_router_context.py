@@ -35,3 +35,30 @@ async def test_build_system_prompt_includes_calendar_and_mail():
         prompt = await router_mod._build_system_prompt()
     assert "Privat" in prompt
     assert "Steuern" in prompt
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_triggers_clarification():
+    """handle_message sends clarification when confidence < 5."""
+    import agents.main as main_mod
+
+    low_confidence_result = {
+        "intent": "personal",
+        "confidence": 3,
+        "params": {},
+        "reasoning": "unsure",
+    }
+
+    fake_update = MagicMock()
+    fake_update.update_id = 9001
+    fake_update.message.text = "bla bla foo"
+    fake_update.message.chat_id = 12345
+    fake_update.message.reply_text = AsyncMock()
+
+    with patch("agents.main.route_with_llm", new_callable=AsyncMock, return_value=low_confidence_result), \
+         patch.object(main_mod, "processed_updates", new=set()):
+        await main_mod.handle_message(fake_update, MagicMock())
+
+    fake_update.message.reply_text.assert_called_once()
+    call_text = fake_update.message.reply_text.call_args[0][0]
+    assert any(kw in call_text.lower() for kw in ("nicht sicher", "präzisier", "klär", "genauer"))

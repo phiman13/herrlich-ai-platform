@@ -311,6 +311,15 @@ async def handle_message(update, context):
     result = await route_with_llm(text)
     intent = result["intent"]
     params = result["params"]
+
+    confidence = result.get("confidence", 10)
+    if confidence < 5:
+        await update.message.reply_text(
+            "Ich bin mir nicht ganz sicher, was du meinst. "
+            "Bitte präzisiere: Kalender, Mail, Task-Liste, Coding oder etwas anderes?"
+        )
+        return
+
     logger.info(f"Intent: {intent} | Nachricht: {text}")
 
     if intent == "calendar":
