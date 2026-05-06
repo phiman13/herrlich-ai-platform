@@ -39,6 +39,15 @@ def _safe_path(project: str, filename: str) -> str | None:
     return str(target)
 
 
+def _safe_cwd(project: str) -> str | None:
+    """Validate project name and return safe cwd path."""
+    base = Path(WORKSPACE).resolve()
+    resolved = (base / project).resolve()
+    if not str(resolved).startswith(str(base)):
+        return None
+    return str(resolved)
+
+
 async def list_projects() -> list[str]:
     """List available projects in the workspace."""
     rc, stdout, _ = await run_as_claude(["ls", WORKSPACE])
@@ -59,25 +68,32 @@ async def read_file(project: str, filename: str) -> str | None:
 
 async def git_log(project: str, n: int = 10) -> str:
     """Get last n git commits for a project."""
-    cwd = f"{WORKSPACE}/{project}"
+    cwd = _safe_cwd(project)
+    if not cwd:
+        return "Ungültiger Projektname."
     rc, stdout, _ = await run_as_claude(["git", "log", "--oneline", f"-{n}"], cwd=cwd)
     return stdout if rc == 0 else "git log failed"
 
 
 async def git_pull(project: str) -> bool:
     """Pull latest changes. Returns True on success."""
-    cwd = f"{WORKSPACE}/{project}"
+    cwd = _safe_cwd(project)
+    if not cwd:
+        return False
     rc, _, _ = await run_as_claude(["git", "pull", "--quiet"], cwd=cwd)
     return rc == 0
 
 
 async def write_file_and_commit(project: str, filename: str, content: str, commit_msg: str) -> bool:
     """Write a file and commit it. Used for backlog edits."""
+    cwd = _safe_cwd(project)
+    if not cwd:
+        logger.warning(f"Path traversal attempt in project: {project!r}")
+        return False
     path = _safe_path(project, filename)
     if path is None:
         logger.warning(f"Path traversal attempt: {project}/{filename}")
         return False
-    cwd = f"{WORKSPACE}/{project}"
 
     try:
         with open(path, "w") as f:

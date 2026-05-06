@@ -1,18 +1,31 @@
 # agents/coding_agent.py
+import asyncio
 import json
 import logging
 import os
 
-from agents.db import SessionDB
-from agents.vps import (
-    WORKSPACE,
-    git_log,
-    git_pull,
-    list_projects,
-    read_file,
-    run_as_claude,
-    write_file_and_commit,
-)
+try:
+    from agents.db import SessionDB
+    from agents.vps import (
+        WORKSPACE,
+        git_log,
+        git_pull,
+        list_projects,
+        read_file,
+        run_as_claude,
+        write_file_and_commit,
+    )
+except ImportError:
+    from db import SessionDB
+    from vps import (
+        WORKSPACE,
+        git_log,
+        git_pull,
+        list_projects,
+        read_file,
+        run_as_claude,
+        write_file_and_commit,
+    )
 from telegram import Bot
 
 logger = logging.getLogger("jarvis.coding")
@@ -20,14 +33,16 @@ logger = logging.getLogger("jarvis.coding")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 _db: SessionDB | None = None
 _initialized = False
+_init_lock = asyncio.Lock()
 
 
 async def _ensure_init():
     global _initialized, _db
-    if not _initialized:
-        _db = SessionDB()
-        await _db.init()
-        _initialized = True
+    async with _init_lock:
+        if not _initialized:
+            _db = SessionDB()
+            await _db.init()
+            _initialized = True
 
 
 async def handle_coding_query(project: str, query_type: str) -> str:
@@ -96,6 +111,8 @@ async def _run_claude_action(
     project: str, task: str, existing_session: str | None
 ) -> tuple[str | None, str]:
     """Run Claude Code action. Returns (session_id, output)."""
+    if not project or "/" in project or ".." in project:
+        return None, f"Ungültiger Projektname: {project!r}"
     cwd = f"{WORKSPACE}/{project}"
 
     cmd = [

@@ -7,7 +7,10 @@ from datetime import datetime
 import anthropic
 
 from calendar_agent import BERLIN
-from agents.vps import list_projects as _list_projects
+try:
+    from agents.vps import list_projects as _list_projects
+except ImportError:
+    from vps import list_projects as _list_projects
 
 logger = logging.getLogger("jarvis")
 _claude = anthropic.Anthropic()
