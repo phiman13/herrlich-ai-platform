@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item, _check_and_clone
+from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item, _check_and_clone, _resolve_project
 
 
 @pytest.mark.asyncio
@@ -131,3 +131,34 @@ async def test_auto_clone_not_found():
         with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
             result = await _check_and_clone("nonexistent")
     assert result == "not_found"
+
+
+def test_resolve_project_exact():
+    projects = ["recipe-app", "herrlich-ai-platform", "immo-radar"]
+    assert _resolve_project("recipe-app", projects) == "recipe-app"
+
+
+def test_resolve_project_fuzzy():
+    projects = ["recipe-app", "herrlich-ai-platform", "immo-radar"]
+    assert _resolve_project("Rezept App", projects) == "recipe-app"
+
+
+def test_resolve_project_substring():
+    projects = ["recipe-app", "herrlich-ai-platform", "immo-radar"]
+    assert _resolve_project("immo", projects) == "immo-radar"
+
+
+def test_resolve_project_no_match():
+    projects = ["recipe-app", "herrlich-ai-platform", "immo-radar"]
+    assert _resolve_project("komplett unbekannt xyz 123", projects) is None
+
+
+@pytest.mark.asyncio
+async def test_query_uses_fuzzy_project():
+    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
+         patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
+         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+        mock_list.return_value = ["recipe-app", "immo-radar"]
+        mock_read.return_value = "# Backlog\n- [ ] Fix login\n"
+        result = await handle_coding_query("immo", "backlog")
+    assert "Fix login" in result
