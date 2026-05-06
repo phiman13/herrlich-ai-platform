@@ -312,7 +312,7 @@ async def handle_message(update, context):
     intent = result["intent"]
     params = result["params"]
 
-    confidence = result.get("confidence", 10)
+    confidence = result["confidence"]
     if confidence < 5:
         await update.message.reply_text(
             "Ich bin mir nicht ganz sicher, was du meinst. "
