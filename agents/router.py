@@ -8,7 +8,10 @@ from datetime import datetime
 import anthropic
 import httpx
 
-from calendar_agent import BERLIN
+try:
+    from agents.calendar_agent import BERLIN
+except ImportError:
+    from calendar_agent import BERLIN
 try:
     from agents.vps import list_projects as _list_projects
 except ImportError:
@@ -22,6 +25,13 @@ _project_list_cache: list[str] = []
 # Context cache: (value, fetched_at_timestamp)
 _todo_lists_cache: tuple[list[str], float] = ([], 0.0)
 _TODO_CACHE_TTL = 1800  # 30 min
+
+# calendar names come from env — no network call needed
+_calendar_names_cache: list[str] = []
+
+# mail folder names cache: (value, fetched_at)
+_mail_folders_cache: tuple[list[str], float] = ([], 0.0)
+_MAIL_FOLDER_CACHE_TTL = 1800  # 30 min
 
 
 async def _get_project_list() -> list[str]:
@@ -56,20 +66,64 @@ async def _get_todo_list_names() -> list[str]:
         logger.debug(f"To-Do-Listen nicht abrufbar: {e}")
     return names
 
+
+async def _get_calendar_names() -> list[str]:
+    global _calendar_names_cache
+    if not _calendar_names_cache:
+        import os as _os
+        raw = _os.environ.get("CALENDAR_WHITELIST", "")
+        _calendar_names_cache = [w.strip() for w in raw.split(",") if w.strip()]
+    return _calendar_names_cache
+
+
+async def _get_mail_folder_names() -> list[str]:
+    global _mail_folders_cache
+    names, fetched_at = _mail_folders_cache
+    if names and (time.time() - fetched_at) < _MAIL_FOLDER_CACHE_TTL:
+        return names
+    try:
+        def _fetch():
+            try:
+                from microsoft_auth import get_access_token
+            except ImportError:
+                from agents.microsoft_auth import get_access_token
+            token = get_access_token()
+            resp = httpx.get(
+                "https://graph.microsoft.com/v1.0/me/mailFolders",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"$top": 50, "$select": "displayName"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            return [f["displayName"] for f in resp.json().get("value", [])]
+        names = await asyncio.to_thread(_fetch)
+        _mail_folders_cache = (names, time.time())
+    except Exception as e:
+        logger.debug(f"Mail-Ordner nicht abrufbar: {e}")
+    return names
+
+
 _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen KI-Assistenten von Philipp. Klassifiziere die User-Nachricht in genau einen der folgenden Intents und extrahiere relevante Parameter. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Markdown-Codeblock, ohne erklärenden Text.
 
 ## Verfügbare Intents
 
 1. "calendar" — Fragen zum Kalender (Apple Calendar via CalDAV).
-   Beispiele: "Was habe ich heute?", "Habe ich nächste Woche Termine?", "Wann ist mein nächster Termin?", "Bin ich Mittwoch frei?", "Was steht morgen an?"
+   Verfügbare Kalender: {CALENDAR_NAMES}
+
+   Beispiele:
+   - "Was habe ich heute?" → mode=read, kind=today
+   - "Erstelle Termin Zahnarzt morgen 10 Uhr" → mode=write
 
    Parameter:
-   - kind: "today" | "tomorrow" | "week" | "next" | "range" | "specific_day"
-   - start: ISO-8601 datetime oder null (nur bei "range" / "specific_day")
-   - end: ISO-8601 datetime oder null (nur bei "range" / "specific_day")
-   - label: deutsche Beschreibung des Zeitfensters für die spätere Antwortformatierung (z.B. "die nächsten zwei Tage")
+   - mode: "read" | "write"
+   - kind: "today" | "tomorrow" | "week" | "next" | "range" | "specific_day" (nur bei mode=read)
+   - start: ISO-8601 datetime oder null
+   - end: ISO-8601 datetime oder null (bei mode=write und null → start + 1 Stunde)
+   - label: deutsche Beschreibung des Zeitfensters (nur bei mode=read)
+   - title: string (Termin-Titel, nur bei mode=write)
+   - calendar_name: string oder null (Ziel-Kalender, einer aus: {CALENDAR_NAMES}, nur bei mode=write)
 
-   WICHTIG: Heute ist {HEUTE_ISO}. Berechne start/end immer relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein, weil der bestehende Calendar-Handler die Berechnung übernimmt. Bei "range" oder "specific_day" MUSS start/end gesetzt sein.
+   WICHTIG: Heute ist {HEUTE_ISO}. Bei mode=read: Berechne start/end relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein. Bei "range" oder "specific_day" MUSS start/end gesetzt sein. Bei mode=write: start MUSS gesetzt sein. end=null bedeutet start+1h.
 
 2. "coding" — Aufgaben oder Fragen zu Code-Projekten.
    Verfügbare Projekte: {PROJECT_LIST}
@@ -98,23 +152,28 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
    Parameter: keine
 
-5. "mail" — Anfragen zu Outlook-Mails (Posteingang, Ordner, Suche). NUR LESEN, keine Aktionen wie verschieben oder löschen.
+5. "mail" — Anfragen zu Outlook-Mails (Posteingang, Ordner, Suche). NUR LESEN, keine Aktionen wie verschieben oder löschen. Außer mode=compose.
+   Verfügbare Ordner: {MAIL_FOLDERS}
 
    Beispiele:
-   - "Was Wichtiges im Posteingang?"
-   - "Was hab ich verpasst?" / "Ungelesene Mails"
-   - "Hat mir Anna geschrieben?"
-   - "Mails von letzter Woche zum Thema X"
-   - "Was steht im Ordner 'Steuern'?"
-   - "Welche Ordner gibt es?"
+   - "Was Wichtiges im Posteingang?" → quick_scan
+   - "Was hab ich verpasst?" / "Ungelesene Mails" → unread
+   - "Hat mir Anna geschrieben?" → search
+   - "Mails von letzter Woche zum Thema X" → search
+   - "Was steht im Ordner 'Steuern'?" → quick_scan mit folder_name
+   - "Welche Ordner gibt es?" → list_folders
+   - "Schreibe eine Mail an anna@beispiel.de ..." → compose
 
    Parameter:
-   - mode: "quick_scan" | "unread" | "search" | "list_folders"
+   - mode: "quick_scan" | "unread" | "search" | "list_folders" | "compose"
    - count: integer oder null (Anzahl Mails, default je nach mode)
    - sender: string oder null (Filter nach Absender, falls genannt)
    - subject_contains: string oder null (Filter nach Betreff)
    - since_iso: ISO-8601 datetime oder null (nur Mails ab diesem Zeitpunkt, relativ zu {HEUTE_ISO})
-   - folder_name: string oder null (spezifischer Ordner, falls genannt)
+   - folder_name: string oder null (spezifischer Ordner, einer aus: {MAIL_FOLDERS})
+   - to_email: string oder null (Empfänger-Adresse, nur bei mode=compose)
+   - subject: string oder null (Betreff, nur bei mode=compose)
+   - body: string oder null (Mail-Text auf Deutsch, nur bei mode=compose)
 
    Mode-Bestimmung:
    - "Posteingang" / "Was Neues" / "Aktuelle Mails" → quick_scan
@@ -122,6 +181,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - "Hat mir X geschrieben" / "Mails von X" / "zum Thema Y" → search
    - "Welche Ordner" / "Liste meiner Ordner" → list_folders
    - Ordnerangaben wie "im Ordner X" setzen folder_name, mode bleibt je nach Hauptfrage
+   - "Schreibe/Sende eine Mail an ..." → compose (extrahiere to_email, subject, body aus dem Text)
 
 6. "personal" — Allgemeine Fragen, Smalltalk, alles andere.
    Beispiele: "Wie geht's dir?", "Erklär mir Photosynthese", "Was hältst du von..."
@@ -172,17 +232,23 @@ _FALLBACK = {
 
 async def _build_system_prompt() -> str:
     heute = datetime.now(BERLIN).strftime("%Y-%m-%d")
-    project_list, todo_names = await asyncio.gather(
+    project_list, todo_names, calendar_names, mail_folders = await asyncio.gather(
         _get_project_list(),
         _get_todo_list_names(),
+        _get_calendar_names(),
+        _get_mail_folder_names(),
     )
     projects_str = ", ".join(project_list) if project_list else "recipe-app"
     todo_str = ", ".join(todo_names) if todo_names else "(nicht verfügbar)"
+    calendar_str = ", ".join(calendar_names) if calendar_names else "(nicht verfügbar)"
+    mail_str = ", ".join(mail_folders) if mail_folders else "(nicht verfügbar)"
     return (
         _SYSTEM_TEMPLATE
         .replace("{HEUTE_ISO}", heute)
         .replace("{PROJECT_LIST}", projects_str)
         .replace("{TODO_LISTS}", todo_str)
+        .replace("{CALENDAR_NAMES}", calendar_str)
+        .replace("{MAIL_FOLDERS}", mail_str)
     )
 
 
