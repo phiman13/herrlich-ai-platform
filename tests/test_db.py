@@ -1,5 +1,6 @@
 # tests/test_db.py
 import asyncio
+import os
 import pytest
 from agents.db import SessionDB
 
@@ -31,3 +32,9 @@ def test_upsert_overwrites(db):
     asyncio.run(db.upsert_session("recipe-app", "sess_new"))
     result = asyncio.run(db.get_session("recipe-app", ttl_hours=2))
     assert result == "sess_new"
+
+def test_db_creates_parent_directory(tmp_path):
+    nested_path = str(tmp_path / "deep" / "nested" / "dirs" / "test.db")
+    db = SessionDB(nested_path)
+    asyncio.run(db.init())
+    assert os.path.exists(nested_path)

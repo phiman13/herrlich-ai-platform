@@ -1,12 +1,14 @@
 # agents/db.py
 import aiosqlite
-from datetime import datetime, timedelta
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 
 class SessionDB:
     def __init__(self, path: str = "/root/.jarvis/sessions.db"):
         self.path = path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:
@@ -27,11 +29,11 @@ class SessionDB:
                 ON CONFLICT(project) DO UPDATE SET
                     session_id = excluded.session_id,
                     last_used = excluded.last_used
-            """, (project, session_id, datetime.utcnow().isoformat()))
+            """, (project, session_id, datetime.now(timezone.utc).isoformat()))
             await db.commit()
 
     async def get_session(self, project: str, ttl_hours: float = 2.0) -> Optional[str]:
-        cutoff = (datetime.utcnow() - timedelta(hours=ttl_hours)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
         async with aiosqlite.connect(self.path) as db:
             async with db.execute("""
                 SELECT session_id FROM coding_sessions
