@@ -113,3 +113,12 @@ async def write_file_and_commit(project: str, filename: str, content: str, commi
         return False
     rc, _, _ = await run_as_claude(["git", "commit", "-m", commit_msg], cwd=cwd)
     return rc == 0
+
+
+async def git_push(project: str) -> bool:
+    """Push committed changes to origin. Returns True on success."""
+    cwd = _safe_cwd(project)
+    if not cwd:
+        return False
+    rc, _, _ = await run_as_claude(["git", "push"], cwd=cwd)
+    return rc == 0

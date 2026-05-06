@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
-from agents.vps import read_file, list_projects, git_log, git_pull, write_file_and_commit
+from agents.vps import read_file, list_projects, git_log, git_pull, write_file_and_commit, git_push
 
 
 def test_list_projects_parses_output():
@@ -58,6 +58,22 @@ def test_git_pull_returns_false_on_failure():
     with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock:
         mock.return_value = (1, "", "error")
         result = asyncio.run(git_pull("recipe-app"))
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_git_push_success():
+    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock:
+        mock.return_value = (0, "", "")
+        result = await git_push("recipe-app")
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_git_push_failure():
+    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock:
+        mock.return_value = (1, "", "rejected")
+        result = await git_push("recipe-app")
     assert result is False
 
 

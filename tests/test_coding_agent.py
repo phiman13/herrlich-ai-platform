@@ -1,8 +1,8 @@
 # tests/test_coding_agent.py
 import asyncio
 import pytest
-from unittest.mock import patch, AsyncMock
-from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item
+from unittest.mock import patch, AsyncMock, MagicMock
+from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item, _check_and_clone
 
 
 @pytest.mark.asyncio
@@ -32,8 +32,10 @@ async def test_query_git_log():
 
 @pytest.mark.asyncio
 async def test_query_unknown_project():
-    with patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list, \
+         patch("agents.coding_agent._check_and_clone", new_callable=AsyncMock) as mock_clone:
         mock_list.return_value = ["recipe-app", "immo-radar"]
+        mock_clone.return_value = "not_found"
         result = await handle_coding_query("nonexistent-project", "backlog")
     assert "nicht gefunden" in result.lower() or "verfügbare" in result.lower()
 
@@ -94,12 +96,38 @@ async def test_backlog_add_item():
     with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
          patch("agents.coding_agent.write_file_and_commit", new_callable=AsyncMock) as mock_write, \
          patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
+         patch("agents.coding_agent.git_push", new_callable=AsyncMock) as mock_push, \
          patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
         mock_list.return_value = ["recipe-app"]
         mock_read.return_value = existing
         mock_write.return_value = True
+        mock_push.return_value = True
         result = await add_backlog_item("recipe-app", "Add dark mode", priority="P1")
     assert result is True
     written_content = mock_write.call_args[0][2]  # content argument
     assert "Add dark mode" in written_content
     assert "Fix login" in written_content  # existing items preserved
+
+
+@pytest.mark.asyncio
+async def test_auto_clone_archived_repo():
+    fake_response = b'{"archived": true, "name": "old-repo"}'
+    with patch("agents.coding_agent.asyncio.create_subprocess_exec") as mock_proc:
+        proc = MagicMock()
+        proc.communicate = AsyncMock(return_value=(fake_response, b""))
+        mock_proc.return_value = proc
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+            result = await _check_and_clone("old-repo")
+    assert result == "archived"
+
+
+@pytest.mark.asyncio
+async def test_auto_clone_not_found():
+    fake_response = b'{"message": "Not Found"}'
+    with patch("agents.coding_agent.asyncio.create_subprocess_exec") as mock_proc:
+        proc = MagicMock()
+        proc.communicate = AsyncMock(return_value=(fake_response, b""))
+        mock_proc.return_value = proc
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+            result = await _check_and_clone("nonexistent")
+    assert result == "not_found"

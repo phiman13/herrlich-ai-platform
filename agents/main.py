@@ -429,6 +429,24 @@ async def microsoft_callback(code: str = "", error: str = "", error_description:
         logger.exception("OAuth-Callback fehlgeschlagen")
         return PlainTextResponse(f"❌ Callback-Fehler: {e}", status_code=500)
 
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from vps import git_push
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+
+    if data.startswith("push:"):
+        project = data[5:]
+        await query.edit_message_reply_markup(reply_markup=None)
+        success = await git_push(project)
+        if success:
+            await query.message.reply_text(f"✅ *{project}* gepusht.", parse_mode="Markdown")
+        else:
+            await query.message.reply_text(f"❌ Push fehlgeschlagen für {project}.")
+    elif data == "dismiss":
+        await query.edit_message_reply_markup(reply_markup=None)
+
+
 @app.on_event("startup")
 async def startup():
     from coding_agent import _ensure_init
@@ -437,6 +455,8 @@ async def startup():
     logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    from telegram.ext import CallbackQueryHandler
+    bot_app.add_handler(CallbackQueryHandler(handle_callback))
     await bot_app.initialize()
     await bot_app.start()
     logger.info("Jarvis gestartet")
