@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
-from agents.coding_agent import handle_coding_query
+from agents.coding_agent import handle_coding_query, _run_claude_action
 
 
 @pytest.mark.asyncio
@@ -49,3 +49,40 @@ async def test_query_backlog_falls_back_to_todo():
         mock_read.side_effect = [None, "- [ ] Todo item\n"]
         result = await handle_coding_query("recipe-app", "backlog")
     assert "Todo item" in result
+
+
+@pytest.mark.asyncio
+async def test_action_parses_session_id():
+    """Claude Code stream-json output enthält session_id im result-Event."""
+    fake_output = (
+        '{"type":"system","subtype":"init","session_id":"sess_abc123"}\n'
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}\n'
+        '{"type":"result","subtype":"success","session_id":"sess_abc123","result":"Fixed."}\n'
+    )
+    with patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run, \
+         patch("agents.coding_agent._db") as mock_db:
+        mock_run.return_value = (0, fake_output, "")
+        mock_db.upsert_session = AsyncMock()
+        session_id, output = await _run_claude_action(
+            project="recipe-app",
+            task="Fix the login bug",
+            existing_session=None,
+        )
+    assert session_id == "sess_abc123"
+    assert "Fixed." in output or "Done." in output
+
+
+@pytest.mark.asyncio
+async def test_action_uses_resume_when_session_exists():
+    with patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run, \
+         patch("agents.coding_agent._db") as mock_db:
+        mock_run.return_value = (0, '{"type":"result","session_id":"sess_xyz","result":"ok"}\n', "")
+        mock_db.upsert_session = AsyncMock()
+        await _run_claude_action(
+            project="recipe-app",
+            task="Also add tests",
+            existing_session="sess_existing",
+        )
+    call_args = mock_run.call_args[0][0]  # cmd list
+    assert "--resume" in call_args
+    assert "sess_existing" in call_args
