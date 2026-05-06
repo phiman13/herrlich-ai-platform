@@ -7,9 +7,21 @@ from datetime import datetime
 import anthropic
 
 from calendar_agent import BERLIN
+try:
+    from agents.vps import list_projects as _list_projects
+except ImportError:
+    from vps import list_projects as _list_projects
 
 logger = logging.getLogger("jarvis")
 _claude = anthropic.Anthropic()
+
+_project_list_cache: list[str] = []
+
+async def _get_project_list() -> list[str]:
+    global _project_list_cache
+    if not _project_list_cache:
+        _project_list_cache = await _list_projects()
+    return _project_list_cache
 
 _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen KI-Assistenten von Philipp. Klassifiziere die User-Nachricht in genau einen der folgenden Intents und extrahiere relevante Parameter. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Markdown-Codeblock, ohne erklärenden Text.
 
@@ -27,11 +39,21 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    WICHTIG: Heute ist {HEUTE_ISO}. Berechne start/end immer relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein, weil der bestehende Calendar-Handler die Berechnung übernimmt. Bei "range" oder "specific_day" MUSS start/end gesetzt sein.
 
 2. "coding" — Aufgaben oder Fragen zu Code-Projekten.
-   Beispiele: "Fixe den Login-Bug in recipe-app", "Was steht im Backlog?", "Erstelle einen neuen Branch", "Erkläre mir wie die Auth funktioniert"
+   Verfügbare Projekte: {PROJECT_LIST}
+
+   Beispiele:
+   - "Backlog von recipe-app?" → query, backlog
+   - "Was hat sich zuletzt in immo-radar geändert?" → query, git_log
+   - "Fixe den Login-Bug in recipe-app" → action
+   - "Füge 'Dark Mode' zum Backlog von recipe-app hinzu" → backlog_write
+   - "Schreibe Feature X in immo-radar" → action
 
    Parameter:
-   - project: string oder null (Projektname, falls erwähnt)
-   - mode: "action" | "question" — "action" wenn Code geändert werden soll, "question" wenn nur informiert/erklärt werden soll
+   - project: string (Projektname, einer aus: {PROJECT_LIST}) oder null
+   - mode: "query" | "action" | "backlog_write"
+   - query_type: "backlog" | "git_log" | "readme" | "claude_md" (nur bei mode=query)
+   - backlog_item: string (der neue Eintrag, nur bei mode=backlog_write)
+   - backlog_priority: "P1" | "P2" | "P3" (default: "P1", nur bei mode=backlog_write)
 
 3. "research" — Web-Recherche-Anfragen.
    Beispiele: "Recherchiere ESG-Pflichten 2026", "Was sind die aktuellen Entwicklungen bei...", "Suche im Internet nach..."
@@ -73,10 +95,23 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
    Parameter: keine
 
+7. "news" — KI-News und Technologie-Neuigkeiten abrufen.
+   Beispiele: "Was gibt's Neues in AI?", "Neueste KI-Entwicklungen?", "AI News"
+
+   Parameter: keine
+
+8. "tasks" — MS To Do Tasks lesen oder schreiben.
+   Beispiele: "Was steht auf meiner Einkaufsliste?", "Füge Milch zur Einkaufsliste hinzu", "Erledigte Tasks anzeigen"
+
+   Parameter:
+   - mode: "read" | "write" | "complete"
+   - list_name: string oder null (Listenname, z.B. "Einkaufsliste")
+   - item: string oder null (Task-Text, nur bei mode=write)
+
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -95,9 +130,15 @@ _FALLBACK = {
 }
 
 
-def _build_system_prompt() -> str:
+async def _build_system_prompt() -> str:
     heute = datetime.now(BERLIN).strftime("%Y-%m-%d")
-    return _SYSTEM_TEMPLATE.replace("{HEUTE_ISO}", heute)
+    project_list = await _get_project_list()
+    projects_str = ", ".join(project_list) if project_list else "recipe-app"
+    return (
+        _SYSTEM_TEMPLATE
+        .replace("{HEUTE_ISO}", heute)
+        .replace("{PROJECT_LIST}", projects_str)
+    )
 
 
 def _call_claude_sync(system: str, user: str) -> str:
@@ -113,7 +154,7 @@ def _call_claude_sync(system: str, user: str) -> str:
 
 async def route_with_llm(text: str) -> dict:
     logger.info(f"Router input: {text!r}")
-    system = _build_system_prompt()
+    system = await _build_system_prompt()
     try:
         raw = await asyncio.to_thread(_call_claude_sync, system, text)
         cleaned = raw.strip()
@@ -124,7 +165,7 @@ async def route_with_llm(text: str) -> dict:
         for field in ("intent", "confidence", "params", "reasoning"):
             if field not in parsed:
                 raise ValueError(f"missing field: {field}")
-        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal"}:
+        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks"}:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed
     except (json.JSONDecodeError, ValueError) as e:
