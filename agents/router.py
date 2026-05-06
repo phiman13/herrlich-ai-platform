@@ -4,14 +4,13 @@ import asyncio
 import re
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import anthropic
 import httpx
 
-try:
-    from agents.calendar_agent import BERLIN
-except ImportError:
-    from calendar_agent import BERLIN
+BERLIN = ZoneInfo("Europe/Berlin")
+
 try:
     from agents.vps import list_projects as _list_projects
 except ImportError:
