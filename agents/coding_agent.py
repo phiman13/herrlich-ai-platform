@@ -120,6 +120,31 @@ async def _run_claude_action(
     return session_id, output
 
 
+async def add_backlog_item(project: str, item: str, priority: str = "P1") -> bool:
+    """Add a new item to BACKLOG.md under the given priority section."""
+    await _ensure_init()
+    content = await read_file(project, "BACKLOG.md")
+    if content is None:
+        content = f"# Backlog\n\n## {priority}\n"
+
+    new_line = f"- [ ] {item}"
+
+    section_header = f"## {priority}"
+    if section_header in content:
+        insert_pos = content.index(section_header) + len(section_header)
+        newline_pos = content.index("\n", insert_pos)
+        content = content[:newline_pos + 1] + new_line + "\n" + content[newline_pos + 1:]
+    else:
+        content += f"\n## {priority}\n{new_line}\n"
+
+    return await write_file_and_commit(
+        project,
+        "BACKLOG.md",
+        content,
+        f"backlog: {item[:60]}",
+    )
+
+
 async def run_coding_action(task: str, project: str, chat_id: int):
     """Full action flow with Telegram progress updates."""
     await _ensure_init()

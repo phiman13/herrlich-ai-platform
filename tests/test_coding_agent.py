@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
-from agents.coding_agent import handle_coding_query, _run_claude_action
+from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item
 
 
 @pytest.mark.asyncio
@@ -86,3 +86,20 @@ async def test_action_uses_resume_when_session_exists():
     call_args = mock_run.call_args[0][0]  # cmd list
     assert "--resume" in call_args
     assert "sess_existing" in call_args
+
+
+@pytest.mark.asyncio
+async def test_backlog_add_item():
+    existing = "# Backlog\n\n## P1\n- [ ] Fix login\n"
+    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
+         patch("agents.coding_agent.write_file_and_commit", new_callable=AsyncMock) as mock_write, \
+         patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
+         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+        mock_list.return_value = ["recipe-app"]
+        mock_read.return_value = existing
+        mock_write.return_value = True
+        result = await add_backlog_item("recipe-app", "Add dark mode", priority="P1")
+    assert result is True
+    written_content = mock_write.call_args[0][2]  # content argument
+    assert "Add dark mode" in written_content
+    assert "Fix login" in written_content  # existing items preserved
