@@ -101,17 +101,22 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    Parameter: keine
 
 8. "tasks" — MS To Do Tasks lesen oder schreiben.
-   Beispiele: "Was steht auf meiner Einkaufsliste?", "Füge Milch zur Einkaufsliste hinzu", "Erledigte Tasks anzeigen"
+   Beispiele: "Was steht auf meiner Einkaufsliste?", "Füge Milch zur Einkaufsliste hinzu", "Erledigte Tasks anzeigen", "Zeig mir alle To Do Listen"
 
    Parameter:
    - mode: "read" | "write" | "complete"
    - list_name: string oder null (Listenname, z.B. "Einkaufsliste")
    - item: string oder null (Task-Text, nur bei mode=write)
 
+9. "briefing" — Morning Briefing abrufen: Kalender, Wetter, Mail, News, Tasks, GitHub.
+   Beispiele: "Briefing", "Gib mir mein Briefing", "Morning Briefing", "Was liegt heute an?"
+
+   Parameter: keine
+
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -165,7 +170,7 @@ async def route_with_llm(text: str) -> dict:
         for field in ("intent", "confidence", "params", "reasoning"):
             if field not in parsed:
                 raise ValueError(f"missing field: {field}")
-        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks"}:
+        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks", "briefing"}:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed
     except (json.JSONDecodeError, ValueError) as e:
