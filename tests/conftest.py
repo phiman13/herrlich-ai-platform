@@ -32,6 +32,7 @@ for _key in list(sys.modules):
 def pytest_configure(config):
     """Set env vars and mock external deps before any test module imports agents.*"""
     os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_token_12345:test_string")
+    os.environ.setdefault("OPENAI_API_KEY", "test_key_for_tests")
 
     # Patch telegram.ext.Application.builder at import time
     mock_bot_app = MagicMock()
