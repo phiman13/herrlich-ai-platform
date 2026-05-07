@@ -40,5 +40,5 @@ wassima==2.0.6
 x-wr-timezone==2.0.1
 feedparser>=6.0.10
 apscheduler>=3.10.4
-openai>=1.0
-numpy>=1.24
+openai>=1.0,<2.0
+numpy>=1.24,<3.0
