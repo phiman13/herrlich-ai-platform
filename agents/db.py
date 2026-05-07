@@ -23,28 +23,36 @@ class SessionDB:
 
     async def upsert_session(self, project: str, session_id: str):
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT INTO coding_sessions (project, session_id, last_used)
                 VALUES (?, ?, ?)
                 ON CONFLICT(project) DO UPDATE SET
                     session_id = excluded.session_id,
                     last_used = excluded.last_used
-            """, (project, session_id, datetime.now(timezone.utc).isoformat()))
+            """,
+                (project, session_id, datetime.now(timezone.utc).isoformat()),
+            )
             await db.commit()
 
     async def get_session(self, project: str, ttl_hours: float = 2.0) -> Optional[str]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
         async with aiosqlite.connect(self.path) as db:
-            async with db.execute("""
+            async with db.execute(
+                """
                 SELECT session_id FROM coding_sessions
                 WHERE project = ? AND last_used > ?
-            """, (project, cutoff)) as cursor:
+            """,
+                (project, cutoff),
+            ) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else None
 
     async def clear_session(self, project: str):
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("DELETE FROM coding_sessions WHERE project = ?", (project,))
+            await db.execute(
+                "DELETE FROM coding_sessions WHERE project = ?", (project,)
+            )
             await db.commit()
 
 
@@ -67,13 +75,20 @@ class MemoryDB:
             """)
             await db.commit()
 
-    async def save(self, content: str, embedding: bytes, category: str, source: str = ""):
+    async def save(
+        self, content: str, embedding: bytes, category: str, source: str = ""
+    ):
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
                 "INSERT INTO memories (content, embedding, category, created_at, source) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (content, embedding, category,
-                 datetime.now(timezone.utc).isoformat(), source),
+                (
+                    content,
+                    embedding,
+                    category,
+                    datetime.now(timezone.utc).isoformat(),
+                    source,
+                ),
             )
             await db.commit()
 
@@ -122,6 +137,17 @@ class MemoryDB:
             )
             await db.commit()
 
+    async def load_since(self, days: int) -> list:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT content, category, created_at FROM memories "
+                "WHERE created_at > ? ORDER BY id ASC",
+                (cutoff,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [{"content": r[0], "category": r[1], "created_at": r[2]} for r in rows]
+
 
 class ConversationDB:
     def __init__(self, path: str = "/root/.jarvis/conversations.db"):
@@ -166,3 +192,63 @@ class ConversationDB:
             ) as cursor:
                 rows = await cursor.fetchall()
         return [{"role": r[0], "content": r[1]} for r in rows]
+
+
+class ProactiveDB:
+    def __init__(self, path: str = "/root/.jarvis/proactive.db"):
+        self.path = path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    async def init(self):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS reported_mails (
+                    mail_id    TEXT PRIMARY KEY,
+                    reported_at TEXT NOT NULL
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS reminded_tasks (
+                    task_id      TEXT PRIMARY KEY,
+                    last_reminded TEXT NOT NULL
+                )
+            """)
+            await db.commit()
+
+    async def get_reported_mail_ids(self) -> set:
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute("SELECT mail_id FROM reported_mails") as cursor:
+                rows = await cursor.fetchall()
+        return {r[0] for r in rows}
+
+    async def mark_mails_reported(self, mail_ids: list) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                "INSERT OR IGNORE INTO reported_mails (mail_id, reported_at) VALUES (?, ?)",
+                [(mid, now) for mid in mail_ids],
+            )
+            await db.execute(
+                "DELETE FROM reported_mails WHERE reported_at < ?", (cutoff,)
+            )
+            await db.commit()
+
+    async def get_last_reminded(self, task_id: str):
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT last_reminded FROM reminded_tasks WHERE task_id = ?", (task_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+        if row is None:
+            return None
+        return datetime.fromisoformat(row[0])
+
+    async def mark_tasks_reminded(self, task_ids: list) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                "INSERT OR REPLACE INTO reminded_tasks (task_id, last_reminded) VALUES (?, ?)",
+                [(tid, now) for tid in task_ids],
+            )
+            await db.commit()
