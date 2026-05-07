@@ -86,6 +86,14 @@ class MemoryAgent:
             raw = raw.strip()
             if not raw:
                 return
+            # Haiku sometimes wraps JSON in preamble text — extract the array
+            if not raw.startswith("["):
+                import re
+                m = re.search(r"\[.*\]", raw, re.DOTALL)
+                if not m:
+                    logger.debug("Memory extraction: no JSON array in response: %r", raw[:120])
+                    return
+                raw = m.group(0)
             facts = json.loads(raw)
             if not isinstance(facts, list):
                 return
