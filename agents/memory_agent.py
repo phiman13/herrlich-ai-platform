@@ -16,7 +16,7 @@ logger = logging.getLogger("jarvis.memory")
 MEMORY_INTENTS = {"personal", "work", "research"}
 
 _claude = anthropic.Anthropic()
-CURRENT_MODEL = "intfloat/multilingual-e5-small"
+CURRENT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MARKER_FILE = "/root/.jarvis/.embedding_model"
 
 _embedding_model = None
