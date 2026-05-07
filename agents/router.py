@@ -198,9 +198,15 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    Echte MS To Do Listennamen (verwende diese exakten Namen als list_name): {TODO_LISTS}
 
    Parameter:
-   - mode: "read" | "write" | "complete"
-   - list_name: string oder null — MUSS einem der echten Listennamen oben entsprechen, nicht dem was der User sagt
+   - mode: "read" | "write" | "complete" | "create_list" | "delete_list" | "rename_list"
+   - list_name: string oder null — bei read/write/complete/delete_list/rename_list: MUSS einem der echten Listennamen oben entsprechen; bei create_list: der gewünschte neue Name (frei wählbar)
    - item: string oder null (Task-Text, nur bei mode=write)
+   - new_name: string oder null (neuer Listenname, nur bei mode=rename_list)
+
+   Mode-Bestimmung:
+   - "Neue Liste anlegen / erstellen" → create_list (list_name = gewünschter Name)
+   - "Liste löschen / entfernen" → delete_list
+   - "Liste umbenennen / in X umbenennen" → rename_list (list_name = alter Name, new_name = neuer Name)
 
 9. "briefing" — Morning Briefing abrufen: Kalender, Wetter, Mail, News, Tasks, GitHub.
    Beispiele: "Briefing", "Gib mir mein Briefing", "Morning Briefing", "Was liegt heute an?"

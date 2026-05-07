@@ -99,6 +99,52 @@ def add_task(list_name: str, title: str) -> bool:
         return False
 
 
+def create_list(name: str) -> bool:
+    try:
+        resp = httpx.post(
+            f"{_BASE}/lists",
+            headers=_headers(),
+            json={"displayName": name},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"create_list fehlgeschlagen: {e}")
+        return False
+
+
+def delete_list(list_name: str) -> bool:
+    try:
+        list_id = _find_list_id(list_name)
+        if not list_id:
+            return False
+        resp = httpx.delete(f"{_BASE}/lists/{list_id}", headers=_headers(), timeout=10)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"delete_list fehlgeschlagen: {e}")
+        return False
+
+
+def rename_list(list_name: str, new_name: str) -> bool:
+    try:
+        list_id = _find_list_id(list_name)
+        if not list_id:
+            return False
+        resp = httpx.patch(
+            f"{_BASE}/lists/{list_id}",
+            headers=_headers(),
+            json={"displayName": new_name},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"rename_list fehlgeschlagen: {e}")
+        return False
+
+
 def complete_task(list_name: str, task_title: str) -> bool:
     try:
         list_id = _find_list_id(list_name)

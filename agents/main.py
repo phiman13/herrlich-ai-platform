@@ -16,11 +16,12 @@ from apscheduler.triggers.cron import CronTrigger
 
 from calendar_agent import CalendarAgent, BERLIN
 from router import route_with_llm
+import router
 from coding_agent import handle_coding_query, run_coding_action, add_backlog_item
 from vps import list_projects
 from briefing_agent import build_briefing
 from news_agent import get_ai_news
-from tasks_agent import get_tasks, add_task, complete_task
+from tasks_agent import get_tasks, add_task, complete_task, create_list, delete_list, rename_list
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
@@ -492,6 +493,36 @@ async def handle_message(update, context):
                     )
                 else:
                     await update.message.reply_text("❌ Task nicht gefunden oder bereits erledigt.")
+
+        elif mode == "create_list" and list_name:
+            success = await asyncio.to_thread(create_list, list_name)
+            if success:
+                router._todo_lists_cache = ([], 0.0)
+                await update.message.reply_text(f"✅ Liste *{list_name}* angelegt.", parse_mode="Markdown")
+            else:
+                await update.message.reply_text("❌ Liste konnte nicht angelegt werden.")
+
+        elif mode == "delete_list" and list_name:
+            success = await asyncio.to_thread(delete_list, list_name)
+            if success:
+                router._todo_lists_cache = ([], 0.0)
+                await update.message.reply_text(f"✅ Liste *{list_name}* gelöscht.", parse_mode="Markdown")
+            else:
+                await update.message.reply_text(f"❌ Liste '{list_name}' nicht gefunden oder konnte nicht gelöscht werden.")
+
+        elif mode == "rename_list":
+            new_name = params.get("new_name")
+            if not list_name or not new_name:
+                await update.message.reply_text("Bitte alter und neuer Listenname angeben.")
+            else:
+                success = await asyncio.to_thread(rename_list, list_name, new_name)
+                if success:
+                    router._todo_lists_cache = ([], 0.0)
+                    await update.message.reply_text(
+                        f"✅ Liste *{list_name}* → *{new_name}* umbenannt.", parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text(f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen.")
 
     elif intent == "briefing":
         await update.message.reply_text("⏳ Briefing wird erstellt...")
