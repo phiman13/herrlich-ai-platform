@@ -37,6 +37,14 @@ _EXTRACT_SYSTEM = (
 
 _VALID_CATEGORIES = {"preference", "event", "person", "project", "intention"}
 
+_CATEGORY_EMOJI = {
+    "preference": "⭐",
+    "event": "📅",
+    "person": "👤",
+    "project": "🛠️",
+    "intention": "🎯",
+}
+
 
 def _embed(text: str) -> np.ndarray:
     model = _get_embedding_model()
@@ -107,6 +115,14 @@ class MemoryAgent:
                 if category not in _VALID_CATEGORIES:
                     category = "preference"
                 embedding = await asyncio.to_thread(_embed, content)
+                existing = await self.db.load_all()
+                duplicate = any(
+                    _cosine_sim(embedding, np.frombuffer(r["embedding"], dtype=np.float32)) >= 0.90
+                    for r in existing
+                )
+                if duplicate:
+                    logger.debug("Memory skipped (duplicate): %s", content)
+                    continue
                 await self.db.save(content, embedding.tobytes(), category, source)
                 logger.info("Memory saved: [%s] %s", category, content)
         except Exception as e:
@@ -118,7 +134,8 @@ class MemoryAgent:
             return "Ich habe noch keine Erinnerungen gespeichert."
         lines = ["\U0001f9e0 *Meine Erinnerungen:*\n"]
         for r in rows:
-            lines.append(f"• [{r['category']}] {r['content']}")
+            emoji = _CATEGORY_EMOJI.get(r["category"], "•")
+            lines.append(f"{emoji} {r['content']}")
         return "\n".join(lines)
 
     async def delete_memory(self, query: str | None) -> str:
