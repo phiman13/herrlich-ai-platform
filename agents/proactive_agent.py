@@ -50,7 +50,7 @@ _WEEKDAYS_DE = [
 ]
 
 
-async def init_proactive(proactive_db: ProactiveDB, memory_db: MemoryDB) -> None:
+def init_proactive(proactive_db: ProactiveDB, memory_db: MemoryDB) -> None:
     global _proactive_db, _memory_db
     _proactive_db = proactive_db
     _memory_db = memory_db

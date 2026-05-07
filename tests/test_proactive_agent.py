@@ -16,7 +16,7 @@ def test_check_important_mails_sends_message_for_important_mail(tmp_path):
     memory_db = MemoryDB(str(tmp_path / "memories.db"))
     asyncio.run(proactive_db.init())
     asyncio.run(memory_db.init())
-    asyncio.run(init_proactive(proactive_db, memory_db))
+    init_proactive(proactive_db, memory_db)
 
     mock_mail = MagicMock()
     mock_mail.id = "mail_abc"
@@ -59,7 +59,7 @@ def test_check_important_mails_no_ping_if_already_reported(tmp_path):
     asyncio.run(proactive_db.init())
     asyncio.run(memory_db.init())
     asyncio.run(proactive_db.mark_mails_reported(["mail_already"]))
-    asyncio.run(init_proactive(proactive_db, memory_db))
+    init_proactive(proactive_db, memory_db)
 
     mock_mail = MagicMock()
     mock_mail.id = "mail_already"
@@ -93,7 +93,7 @@ def test_send_task_reminder_pings_overdue_task(tmp_path):
     memory_db = MemoryDB(str(tmp_path / "memories.db"))
     asyncio.run(proactive_db.init())
     asyncio.run(memory_db.init())
-    asyncio.run(init_proactive(proactive_db, memory_db))
+    init_proactive(proactive_db, memory_db)
 
     overdue_reminder = {
         "uid": "apple_test_uid",
