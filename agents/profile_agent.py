@@ -42,6 +42,7 @@ _UPDATE_SYSTEM = (
 )
 
 _claude = anthropic.Anthropic()
+_profile_lock = asyncio.Lock()
 
 
 class ProfileAgent:
@@ -52,32 +53,35 @@ class ProfileAgent:
             os.makedirs(parent, exist_ok=True)
 
     def load(self) -> str:
-        if not os.path.exists(self.path):
-            with open(self.path, "w", encoding="utf-8") as f:
+        try:
+            with open(self.path, "x", encoding="utf-8") as f:
                 f.write(_DEFAULT_PROFILE)
+        except FileExistsError:
+            pass
         with open(self.path, encoding="utf-8") as f:
             return f.read()
 
     async def update(self, conversation: str) -> None:
-        current = self.load()
-        prompt = f"Aktuelles Profil:\n{current}\n\nGespräch:\n{conversation}"
-        try:
-            resp = await asyncio.to_thread(
-                _claude.messages.create,
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1000,
-                temperature=0,
-                system=_UPDATE_SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            updated = ""
-            for block in resp.content:
-                if hasattr(block, "text"):
-                    updated += block.text
-            updated = updated.strip()
-            if updated and updated != current.strip():
-                with open(self.path, "w", encoding="utf-8") as f:
-                    f.write(updated + "\n")
-                logger.info("User profile updated")
-        except Exception as e:
-            logger.warning("Profile update failed: %s", e)
+        async with _profile_lock:
+            current = self.load()
+            prompt = f"Aktuelles Profil:\n{current}\n\nGespräch:\n{conversation}"
+            try:
+                resp = await asyncio.to_thread(
+                    _claude.messages.create,
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=1000,
+                    temperature=0,
+                    system=_UPDATE_SYSTEM,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                updated = ""
+                for block in resp.content:
+                    if hasattr(block, "text"):
+                        updated += block.text
+                updated = updated.strip()
+                if updated and updated != current.strip():
+                    with open(self.path, "w", encoding="utf-8") as f:
+                        f.write(updated + "\n")
+                    logger.info("User profile updated")
+            except Exception as e:
+                logger.warning("Profile update failed: %s", e)
