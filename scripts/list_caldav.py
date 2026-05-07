@@ -3,12 +3,11 @@ import os
 import caldav
 
 url = "https://caldav.icloud.com"
-user = os.environ.get("CALDAV_USERNAME")
-pw = os.environ.get("CALDAV_PASSWORD")
+user = os.environ.get("ICLOUD_USER") or os.environ.get("CALDAV_USERNAME")
+pw = os.environ.get("ICLOUD_APP_PASSWORD") or os.environ.get("CALDAV_PASSWORD")
 
 if not user or not pw:
-    print("CALDAV_USERNAME oder CALDAV_PASSWORD nicht gesetzt.")
-    print("Bitte zuerst: source /root/.env")
+    print("ICLOUD_USER oder ICLOUD_APP_PASSWORD nicht gesetzt.")
     raise SystemExit(1)
 
 print(f"Connecting as {user} ...")
