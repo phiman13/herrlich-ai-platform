@@ -213,10 +213,22 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
    Parameter: keine
 
+10. "memory" — Jarvis-Erinnerungen abrufen oder löschen.
+   Beispiele:
+   - "Was weißt du über mich?" → mode=list
+   - "Was hast du dir gemerkt?" → mode=list
+   - "Zeig mir deine Erinnerungen" → mode=list
+   - "Vergiss was ich über Siemens gesagt habe" → mode=delete, query="Siemens"
+   - "Vergiss das" → mode=delete, query=null (löscht die neueste Erinnerung)
+
+   Parameter:
+   - mode: "list" | "delete"
+   - query: string oder null (was gelöscht werden soll; null = neueste Erinnerung)
+
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing" | "memory",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -281,7 +293,7 @@ async def route_with_llm(text: str) -> dict:
         for field in ("intent", "confidence", "params", "reasoning"):
             if field not in parsed:
                 raise ValueError(f"missing field: {field}")
-        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks", "briefing"}:
+        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks", "briefing", "memory"}:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed
     except (json.JSONDecodeError, ValueError) as e:
