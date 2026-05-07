@@ -479,12 +479,30 @@ class CalendarAgent:
             if not backend._all_calendars:
                 raise RuntimeError("Keine Kalender verfügbar")
 
-            target = backend._all_calendars[0]
+            # iCloud stores reminder lists under /reminders/ — prefer those over event calendars
+            reminder_cals = [
+                c for c in backend._all_calendars if "/reminders/" in str(c.url)
+            ]
+            default_cal = (reminder_cals or backend._all_calendars)[0]
+
             if list_name:
-                for cal in backend._all_calendars:
-                    if (cal.name or "").strip().lower() == list_name.lower():
-                        target = cal
-                        break
+                target = next(
+                    (
+                        c
+                        for c in backend._all_calendars
+                        if (c.name or "").strip().lower() == list_name.lower()
+                    ),
+                    default_cal,
+                )
+            else:
+                target = default_cal
+
+            logger.info(
+                "create_reminder: target='%s' url=%s (reminder_cals=%d)",
+                target.name,
+                target.url,
+                len(reminder_cals),
+            )
 
             ical = ICalendar()
             ical.add("prodid", "-//Jarvis//EN")
