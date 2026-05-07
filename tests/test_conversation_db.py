@@ -1,5 +1,4 @@
 import asyncio
-import pytest
 
 
 def test_save_and_get_recent(tmp_path):

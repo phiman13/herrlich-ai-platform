@@ -118,9 +118,7 @@ class MemoryDB:
 class ConversationDB:
     def __init__(self, path: str = "/root/.jarvis/conversations.db"):
         self.path = path
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:
