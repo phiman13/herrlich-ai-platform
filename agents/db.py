@@ -46,3 +46,70 @@ class SessionDB:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("DELETE FROM coding_sessions WHERE project = ?", (project,))
             await db.commit()
+
+
+class MemoryDB:
+    def __init__(self, path: str = "/root/.jarvis/memories.db"):
+        self.path = path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    async def init(self):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content   TEXT NOT NULL,
+                    embedding BLOB NOT NULL,
+                    category  TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    source    TEXT
+                )
+            """)
+            await db.commit()
+
+    async def save(self, content: str, embedding: bytes, category: str, source: str = ""):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "INSERT INTO memories (content, embedding, category, created_at, source) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (content, embedding, category,
+                 datetime.now(timezone.utc).isoformat(), source),
+            )
+            await db.commit()
+
+    async def load_all(self) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT id, content, embedding, category FROM memories"
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"id": r[0], "content": r[1], "embedding": r[2], "category": r[3]}
+            for r in rows
+        ]
+
+    async def get_recent(self, n: int = 20) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT id, content, category, created_at FROM memories "
+                "ORDER BY id DESC LIMIT ?",
+                (n,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"id": r[0], "content": r[1], "category": r[2], "created_at": r[3]}
+            for r in rows
+        ]
+
+    async def delete(self, memory_id: int):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            await db.commit()
+
+    async def get_latest_id(self) -> int | None:
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT id FROM memories ORDER BY id DESC LIMIT 1"
+            ) as cursor:
+                row = await cursor.fetchone()
+        return row[0] if row else None
