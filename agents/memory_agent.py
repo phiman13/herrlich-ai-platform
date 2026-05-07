@@ -79,7 +79,13 @@ class MemoryAgent:
                 system=_EXTRACT_SYSTEM,
                 messages=[{"role": "user", "content": conversation}],
             )
-            raw = resp.content[0].text.strip()
+            raw = ""
+            for block in resp.content:
+                if hasattr(block, "text"):
+                    raw += block.text
+            raw = raw.strip()
+            if not raw:
+                return
             facts = json.loads(raw)
             if not isinstance(facts, list):
                 return
