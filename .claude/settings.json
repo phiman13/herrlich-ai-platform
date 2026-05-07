@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/Users/philippherrlich/Documents/04_Sonstiges/01_Coding/herrlich-ai-platform/*)",
+      "Bash(PYTHONPATH=agents .venv/bin/pytest *)",
+      "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+      "mcp__plugin_context-mode_context-mode__ctx_execute",
+      "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
+      "mcp__plugin_context-mode_context-mode__ctx_search"
+    ]
+  },
+  "worktree": {
+    "symlinkDirectories": [".venv"]
+  }
+}
