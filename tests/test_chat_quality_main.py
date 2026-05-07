@@ -14,6 +14,8 @@ def test_send_typing_calls_send_chat_action():
     mock_bot.send_chat_action.assert_called_once()
     call_kwargs = mock_bot.send_chat_action.call_args.kwargs
     assert call_kwargs["chat_id"] == 123
+    from telegram.constants import ChatAction
+    assert call_kwargs["action"] == ChatAction.TYPING
 
 
 def test_keep_typing_stops_on_event():
