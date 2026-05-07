@@ -133,6 +133,7 @@ def test_history_not_saved_for_calendar_intent():
 def test_profile_content_injected_for_personal_intent():
     mock_profile = MagicMock()
     mock_profile.load.return_value = "## Beruf & Rolle\nStrategischer Berater\n"
+    mock_profile.update = AsyncMock()
     main_module._profile_agent = mock_profile
 
     with patch("agents.main.route_with_llm", return_value={

@@ -634,9 +634,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     if _profile_agent and intent in _HISTORY_INTENTS and answer and not answer.startswith("Fehler:"):
         conversation = f"Philipp: {text}\n\nJarvis: {answer}"
-        coro = _profile_agent.update(conversation)
-        if asyncio.iscoroutine(coro):
-            asyncio.create_task(coro)
+        asyncio.create_task(_profile_agent.update(conversation))
 
 
 async def handle_message(update, context):
@@ -779,9 +777,9 @@ async def startup():
     await _conv_db.init()
     _conversation_db = _conv_db
     logger.info("ConversationDB initialisiert")
-    from agents.profile_agent import ProfileAgent
+    from profile_agent import ProfileAgent
     _profile_agent = ProfileAgent()
-    _profile_agent.load()
+    _profile_agent.load()  # creates profile file if it doesn't exist yet
     logger.info("ProfileAgent initialisiert")
     task = asyncio.create_task(_memory_agent.migrate_embeddings())
     task.add_done_callback(
