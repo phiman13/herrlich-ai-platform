@@ -1,25 +1,19 @@
 #!/usr/bin/env python3
-# ruff: noqa: E402
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)) + "/agents")
-
-from dotenv import load_dotenv
-
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "agents", ".env"))
-load_dotenv("/root/agents/.env")
-
 import caldav
 
-url = os.environ.get("CALDAV_URL", "https://caldav.icloud.com")
+url = "https://caldav.icloud.com"
 user = os.environ.get("CALDAV_USERNAME")
 pw = os.environ.get("CALDAV_PASSWORD")
 
-print(f"Connecting as {user}...")
+if not user or not pw:
+    print("CALDAV_USERNAME oder CALDAV_PASSWORD nicht gesetzt.")
+    print("Bitte zuerst: source /root/.env")
+    raise SystemExit(1)
+
+print(f"Connecting as {user} ...")
 client = caldav.DAVClient(url=url, username=user, password=pw)
-principal = client.principal()
-cals = principal.calendars()
+cals = client.principal().calendars()
 
 print(f"\n{len(cals)} Kollektionen:\n")
 for c in cals:
