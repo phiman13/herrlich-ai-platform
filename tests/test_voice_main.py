@@ -55,8 +55,9 @@ def test_handle_voice_deduplicates():
     mock_update.message.voice.get_file = AsyncMock(return_value=mock_file)
 
     with patch("agents.main.transcribe", new_callable=AsyncMock, return_value="Text") as mock_transcribe, \
-         patch("agents.main._process_text", new_callable=AsyncMock):
+         patch("agents.main._process_text", new_callable=AsyncMock) as mock_process:
         asyncio.run(main_module.handle_voice(mock_update, None))
         asyncio.run(main_module.handle_voice(mock_update, None))
 
     assert mock_transcribe.call_count == 1
+    assert mock_process.call_count == 1
