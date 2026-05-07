@@ -12,7 +12,7 @@ import logging
 import os
 import traceback
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -83,12 +83,12 @@ class ICloudCalDAVBackend(CalendarBackend):
         principal = self._client.principal()
         all_cals = principal.calendars()
         self._calendars = [
-            c for c in all_cals
-            if (c.name or "").strip() in self.whitelist
+            c for c in all_cals if (c.name or "").strip() in self.whitelist
         ]
         logger.info(
             "CalDAV connected: %d/%d calendars whitelisted (%s)",
-            len(self._calendars), len(all_cals),
+            len(self._calendars),
+            len(all_cals),
             [c.name for c in self._calendars],
         )
 
@@ -116,7 +116,12 @@ class ICloudCalDAVBackend(CalendarBackend):
                     expand=True,
                 )
             except Exception as e:
-                logger.error("search failed for '%s': %s\n%s", cal_name, e, traceback.format_exc())
+                logger.error(
+                    "search failed for '%s': %s\n%s",
+                    cal_name,
+                    e,
+                    traceback.format_exc(),
+                )
                 continue
 
             for item in results:
@@ -139,9 +144,8 @@ class ICloudCalDAVBackend(CalendarBackend):
                         # Detect all-day events: icalendar returns `date`
                         # (not `datetime`) for VALUE=DATE properties.
                         # datetime is a subclass of date, so check both.
-                        is_all_day = (
-                            isinstance(dtstart, date)
-                            and not isinstance(dtstart, datetime)
+                        is_all_day = isinstance(dtstart, date) and not isinstance(
+                            dtstart, datetime
                         )
 
                         s = _to_berlin(dtstart)
@@ -158,23 +162,27 @@ class ICloudCalDAVBackend(CalendarBackend):
                         location = component.get("location")
                         location = str(location) if location else None
 
-                        events.append(Event(
-                            title=title,
-                            start=s,
-                            end=e,
-                            location=location,
-                            calendar_name=cal_name,
-                            source=self.name,
-                            all_day=is_all_day,
-                        ))
+                        events.append(
+                            Event(
+                                title=title,
+                                start=s,
+                                end=e,
+                                location=location,
+                                calendar_name=cal_name,
+                                source=self.name,
+                                all_day=is_all_day,
+                            )
+                        )
                     except Exception as ex:
                         logger.warning("event parse failed: %s", ex)
                         continue
 
         logger.info(
             "fetch_events: window=%s..%s calendars=%d events=%d",
-            start.isoformat(), end.isoformat(),
-            len(self._calendars or []), len(events),
+            start.isoformat(),
+            end.isoformat(),
+            len(self._calendars or []),
+            len(events),
         )
         return events
 
@@ -216,7 +224,12 @@ class ICloudCalDAVBackend(CalendarBackend):
 
         ical.add_component(event)
         target.save_event(ical.to_ical().decode("utf-8"))
-        logger.info("Termin erstellt: '%s' in '%s' (%s)", title, target.name, start_dt.isoformat())
+        logger.info(
+            "Termin erstellt: '%s' in '%s' (%s)",
+            title,
+            target.name,
+            start_dt.isoformat(),
+        )
 
 
 class CalendarAgent:
@@ -237,11 +250,13 @@ class CalendarAgent:
         whitelist = [w.strip() for w in whitelist_raw.split(",") if w.strip()]
 
         if icloud_user and icloud_pw and whitelist:
-            backends.append(ICloudCalDAVBackend(
-                username=icloud_user,
-                password=icloud_pw,
-                whitelist=whitelist,
-            ))
+            backends.append(
+                ICloudCalDAVBackend(
+                    username=icloud_user,
+                    password=icloud_pw,
+                    whitelist=whitelist,
+                )
+            )
         else:
             logger.warning("iCloud backend disabled (missing env vars)")
 
@@ -265,13 +280,21 @@ class CalendarAgent:
             try:
                 all_events.extend(backend.fetch_events(start, end))
             except Exception as e:
-                logger.error("backend '%s' failed: %s\n%s", backend.name, e, traceback.format_exc())
+                logger.error(
+                    "backend '%s' failed: %s\n%s",
+                    backend.name,
+                    e,
+                    traceback.format_exc(),
+                )
 
         all_events = self._deduplicate(all_events)
         all_events.sort(key=lambda ev: ev.start)
         logger.info(
             "get_events: %s..%s -> %d events from %d backends",
-            start.isoformat(), end.isoformat(), len(all_events), len(self.backends),
+            start.isoformat(),
+            end.isoformat(),
+            len(all_events),
+            len(self.backends),
         )
         return all_events
 
@@ -286,6 +309,7 @@ class CalendarAgent:
 
     def get_reminders_today(self) -> list[str]:
         from datetime import date
+
         today = date.today()
         reminders = []
         for backend in self.backends:
@@ -314,12 +338,168 @@ class CalendarAgent:
                         due_prop = component.get("due")
                         if due_prop is not None:
                             due = due_prop.dt
-                            due_date = due if isinstance(due, date) and not isinstance(due, datetime) else due.date()
+                            due_date = (
+                                due
+                                if isinstance(due, date)
+                                and not isinstance(due, datetime)
+                                else due.date()
+                            )
                             if due_date != today:
                                 continue
                         title = str(component.get("summary") or "(ohne Titel)")
                         reminders.append(title)
         return reminders
+
+    def get_all_reminders(self) -> list:
+        """Return all open Apple Reminders as list of dicts: uid, title, created, due."""
+        reminders = []
+        for backend in self.backends:
+            if not isinstance(backend, ICloudCalDAVBackend):
+                continue
+            try:
+                backend._connect()
+            except Exception as e:
+                logger.warning("CalDAV connect failed for reminders: %s", e)
+                continue
+            for cal in backend._calendars or []:
+                try:
+                    results = cal.search(todo=True)
+                except Exception as e:
+                    logger.warning("VTODO search failed for '%s': %s", cal.name, e)
+                    continue
+                for item in results:
+                    try:
+                        ical = item.icalendar_instance
+                    except Exception:
+                        continue
+                    for component in ical.walk("VTODO"):
+                        status = str(component.get("status") or "").upper()
+                        if status in ("COMPLETED", "CANCELLED"):
+                            continue
+                        uid = str(component.get("uid") or "")
+                        title = str(component.get("summary") or "(ohne Titel)")
+                        created_prop = component.get("created")
+                        created = None
+                        if created_prop is not None:
+                            dt = created_prop.dt
+                            if isinstance(dt, datetime):
+                                created = (
+                                    dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                                )
+                            elif isinstance(dt, date):
+                                created = datetime(
+                                    dt.year, dt.month, dt.day, tzinfo=timezone.utc
+                                )
+                        due_prop = component.get("due")
+                        due = None
+                        if due_prop is not None:
+                            dt = due_prop.dt
+                            if isinstance(dt, datetime):
+                                due = (
+                                    dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                                )
+                            elif isinstance(dt, date):
+                                due = datetime(
+                                    dt.year, dt.month, dt.day, tzinfo=timezone.utc
+                                )
+                        reminders.append(
+                            {
+                                "uid": f"apple_{uid}",
+                                "title": title,
+                                "created": created,
+                                "due": due,
+                            }
+                        )
+        return reminders
+
+    def get_completed_reminders_this_week(self) -> list:
+        """Return titles of Apple Reminders completed since last Monday 00:00 UTC."""
+        now = datetime.now(timezone.utc)
+        monday = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        titles = []
+        for backend in self.backends:
+            if not isinstance(backend, ICloudCalDAVBackend):
+                continue
+            try:
+                backend._connect()
+            except Exception as e:
+                logger.warning("CalDAV connect failed: %s", e)
+                continue
+            for cal in backend._calendars or []:
+                try:
+                    results = cal.search(todo=True)
+                except Exception as e:
+                    logger.warning("VTODO search failed for '%s': %s", cal.name, e)
+                    continue
+                for item in results:
+                    try:
+                        ical = item.icalendar_instance
+                    except Exception:
+                        continue
+                    for component in ical.walk("VTODO"):
+                        if str(component.get("status") or "").upper() != "COMPLETED":
+                            continue
+                        completed_prop = component.get("completed")
+                        if completed_prop is None:
+                            continue
+                        dt = completed_prop.dt
+                        if isinstance(dt, date) and not isinstance(dt, datetime):
+                            dt = datetime(
+                                dt.year, dt.month, dt.day, tzinfo=timezone.utc
+                            )
+                        elif isinstance(dt, datetime) and dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        if dt < monday:
+                            continue
+                        titles.append(str(component.get("summary") or "(ohne Titel)"))
+        return titles
+
+    def create_reminder(self, title: str, due_date=None, list_name: str = None) -> None:
+        """Create a VTODO (Apple Reminder) via CalDAV."""
+        import uuid
+
+        try:
+            from icalendar import Todo
+            from icalendar import Calendar as ICalendar
+        except ImportError:
+            raise RuntimeError("icalendar-Bibliothek nicht installiert")
+
+        for backend in self.backends:
+            if not isinstance(backend, ICloudCalDAVBackend):
+                continue
+            try:
+                backend._connect()
+            except Exception as e:
+                raise RuntimeError(f"CalDAV connect fehlgeschlagen: {e}")
+            if not backend._calendars:
+                raise RuntimeError("Keine Kalender verfügbar")
+
+            target = backend._calendars[0]
+            if list_name:
+                for cal in backend._calendars:
+                    if (cal.name or "").strip().lower() == list_name.lower():
+                        target = cal
+                        break
+
+            ical = ICalendar()
+            ical.add("prodid", "-//Jarvis//EN")
+            ical.add("version", "2.0")
+
+            todo = Todo()
+            todo.add("summary", title)
+            todo.add("uid", str(uuid.uuid4()))
+            todo.add("status", "NEEDS-ACTION")
+            if due_date is not None:
+                todo.add("due", due_date)
+
+            ical.add_component(todo)
+            target.save_todo(ical.to_ical().decode("utf-8"))
+            logger.info("Reminder erstellt: '%s' in '%s'", title, target.name)
+            return
+
+        raise RuntimeError("Kein CalDAV-Backend verfügbar")
 
     def get_calendar_names(self) -> list[str]:
         """Return whitelisted calendar names from env."""
@@ -336,6 +516,8 @@ class CalendarAgent:
         """Create event on first available backend that supports it."""
         for backend in self.backends:
             if hasattr(backend, "create_event"):
-                backend.create_event(title, start_dt, end_dt, calendar_name=calendar_name)
+                backend.create_event(
+                    title, start_dt, end_dt, calendar_name=calendar_name
+                )
                 return
         raise RuntimeError("Kein Backend mit create_event verfügbar")
