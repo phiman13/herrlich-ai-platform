@@ -16,15 +16,15 @@ logger = logging.getLogger("jarvis.memory")
 MEMORY_INTENTS = {"personal", "work", "research"}
 
 _claude = anthropic.Anthropic()
-_openai_client = None
+_embedding_model = None
 
 
-def _get_openai():
-    global _openai_client
-    if _openai_client is None:
-        from openai import OpenAI
-        _openai_client = OpenAI()
-    return _openai_client
+def _get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        from fastembed import TextEmbedding
+        _embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
+    return _embedding_model
 
 
 _EXTRACT_SYSTEM = (
@@ -39,8 +39,8 @@ _VALID_CATEGORIES = {"preference", "event", "person", "project", "intention"}
 
 
 def _embed(text: str) -> np.ndarray:
-    resp = _get_openai().embeddings.create(model="text-embedding-3-small", input=text)
-    return np.array(resp.data[0].embedding, dtype=np.float32)
+    model = _get_embedding_model()
+    return np.array(next(model.embed([text])), dtype=np.float32)
 
 
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:

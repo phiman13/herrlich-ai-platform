@@ -32,7 +32,6 @@ for _key in list(sys.modules):
 def pytest_configure(config):
     """Set env vars and mock external deps before any test module imports agents.*"""
     os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_token_12345:test_string")
-    os.environ.setdefault("OPENAI_API_KEY", "test_key_for_tests")
 
     # Mock missing optional packages so agents.main can be imported without them installed
     for _mod in ("msal", "requests"):
