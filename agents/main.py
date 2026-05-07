@@ -360,12 +360,12 @@ async def start(update, context):
         "Personal: 'Was sind gute Laufschuhe?'"
     )
 
-async def _process_text(text: str, chat_id: int, update) -> None:
-    result = await route_with_llm(text)
-    intent = result["intent"]
-    params = result["params"]
+async def _process_text(text: str, chat_id: int, update: Update) -> None:
+    routing = await route_with_llm(text)
+    intent = routing["intent"]
+    params = routing["params"]
 
-    confidence = result["confidence"]
+    confidence = routing["confidence"]
     if confidence < 5:
         await update.message.reply_text(
             "Ich bin mir nicht ganz sicher, was du meinst. "
@@ -429,9 +429,9 @@ async def _process_text(text: str, chat_id: int, update) -> None:
         if mode == "query":
             query_type = params.get("query_type", "backlog")
             await update.message.reply_text("🔍 Lese...")
-            result = await handle_coding_query(project, query_type)
+            query_result = await handle_coding_query(project, query_type)
             await update.message.reply_text(
-                f"📁 *{project}* — {query_type}\n\n{result[:4000]}",
+                f"📁 *{project}* — {query_type}\n\n{query_result[:4000]}",
                 parse_mode="Markdown",
             )
 
@@ -476,8 +476,8 @@ async def _process_text(text: str, chat_id: int, update) -> None:
         item = params.get("item")
 
         if mode == "read":
-            result = await asyncio.to_thread(get_tasks, list_name)
-            await update.message.reply_text(result or "Keine offenen Tasks.", parse_mode="Markdown")
+            task_result = await asyncio.to_thread(get_tasks, list_name)
+            await update.message.reply_text(task_result or "Keine offenen Tasks.", parse_mode="Markdown")
 
         elif mode == "write" and item:
             if not list_name:
