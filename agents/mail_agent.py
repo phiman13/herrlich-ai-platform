@@ -145,6 +145,17 @@ class MailAgent:
         data = self._get(path, params=params)
         return [self._parse_mail(m) for m in data.get("value", [])]
 
+    def get_inbox_unread(self, n: int = 30) -> list:
+        """Fetch unread messages from Inbox only (naturally excludes Newsletter/Job subfolders)."""
+        params = {
+            "$top": n,
+            "$orderby": "receivedDateTime desc",
+            "$filter": "isRead eq false",
+            "$select": "id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments",
+        }
+        data = self._get("/me/mailFolders/inbox/messages", params=params)
+        return [self._parse_mail(m, "inbox") for m in data.get("value", [])]
+
     def search(
         self,
         sender: str = None,
@@ -202,9 +213,7 @@ class MailAgent:
             "message": {
                 "subject": subject,
                 "body": {"contentType": "Text", "content": body},
-                "toRecipients": [
-                    {"emailAddress": {"address": to_email}}
-                ],
+                "toRecipients": [{"emailAddress": {"address": to_email}}],
             },
             "saveToSentItems": True,
         }
