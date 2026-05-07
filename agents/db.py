@@ -113,3 +113,50 @@ class MemoryDB:
             ) as cursor:
                 row = await cursor.fetchone()
         return row[0] if row else None
+
+
+class ConversationDB:
+    def __init__(self, path: str = "/root/.jarvis/conversations.db"):
+        self.path = path
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+    async def init(self):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id    INTEGER NOT NULL,
+                    role       TEXT NOT NULL,
+                    content    TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_history_chat_id "
+                "ON chat_history(chat_id, id)"
+            )
+            await db.commit()
+
+    async def save(self, chat_id: int, role: str, content: str):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "INSERT INTO chat_history (chat_id, role, content, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (chat_id, role, content, datetime.now(timezone.utc).isoformat()),
+            )
+            await db.commit()
+
+    async def get_recent(self, chat_id: int, n: int = 20) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT role, content FROM ("
+                "  SELECT id, role, content FROM chat_history"
+                "  WHERE chat_id = ?"
+                "  ORDER BY id DESC LIMIT ?"
+                ") ORDER BY id ASC",
+                (chat_id, n),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [{"role": r[0], "content": r[1]} for r in rows]
