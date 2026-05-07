@@ -15,7 +15,10 @@ _BASE = "https://graph.microsoft.com/v1.0/me/todo"
 
 
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {get_access_token()}", "Content-Type": "application/json"}
+    return {
+        "Authorization": f"Bearer {get_access_token()}",
+        "Content-Type": "application/json",
+    }
 
 
 def _get_lists() -> list[dict]:
@@ -53,7 +56,8 @@ def get_tasks(list_name: str | None = None) -> str:
                 return f"Liste '{list_name}' nicht gefunden."
             resp = httpx.get(
                 f"{_BASE}/lists/{list_id}/tasks?$filter=status ne 'completed'&$top=20",
-                headers=_headers(), timeout=10,
+                headers=_headers(),
+                timeout=10,
             )
             resp.raise_for_status()
             tasks = resp.json().get("value", [])
@@ -69,7 +73,8 @@ def get_tasks(list_name: str | None = None) -> str:
             for lst in lists[:5]:
                 resp = httpx.get(
                     f"{_BASE}/lists/{lst['id']}/tasks?$filter=status ne 'completed'&$top=5",
-                    headers=_headers(), timeout=10,
+                    headers=_headers(),
+                    timeout=10,
                 )
                 resp.raise_for_status()
                 tasks = resp.json().get("value", [])
@@ -152,7 +157,8 @@ def complete_task(list_name: str, task_title: str) -> bool:
             return False
         resp = httpx.get(
             f"{_BASE}/lists/{list_id}/tasks?$filter=status ne 'completed'",
-            headers=_headers(), timeout=10,
+            headers=_headers(),
+            timeout=10,
         )
         resp.raise_for_status()
         tasks = resp.json().get("value", [])
@@ -174,3 +180,67 @@ def complete_task(list_name: str, task_title: str) -> bool:
     except Exception as e:
         logger.warning(f"complete_task fehlgeschlagen: {e}")
         return False
+
+
+def get_tasks_raw() -> list:
+    """Return all open tasks from all lists as dicts with id, title, list_name, created_at."""
+    try:
+        lists = _get_lists()
+        all_tasks = []
+        for lst in lists:
+            resp = httpx.get(
+                f"{_BASE}/lists/{lst['id']}/tasks",
+                headers=_headers(),
+                params={
+                    "$filter": "status ne 'completed'",
+                    "$top": 50,
+                    "$select": "id,title,createdDateTime,status",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            for t in resp.json().get("value", []):
+                all_tasks.append(
+                    {
+                        "id": f"todo_{t['id']}",
+                        "title": t["title"],
+                        "list_name": lst["displayName"],
+                        "created_at": t.get("createdDateTime"),
+                    }
+                )
+        return all_tasks
+    except Exception as e:
+        logger.warning("get_tasks_raw fehlgeschlagen: %s", e)
+        return []
+
+
+def get_completed_tasks_this_week() -> list:
+    """Return titles of tasks completed since last Monday 00:00 UTC."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    monday_iso = monday.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        lists = _get_lists()
+        titles = []
+        for lst in lists:
+            resp = httpx.get(
+                f"{_BASE}/lists/{lst['id']}/tasks",
+                headers=_headers(),
+                params={
+                    "$filter": f"status eq 'completed' and lastModifiedDateTime ge {monday_iso}",
+                    "$top": 50,
+                    "$select": "title,status,lastModifiedDateTime",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            for t in resp.json().get("value", []):
+                titles.append(t["title"])
+        return titles
+    except Exception as e:
+        logger.warning("get_completed_tasks_this_week fehlgeschlagen: %s", e)
+        return []
