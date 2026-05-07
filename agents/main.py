@@ -44,6 +44,8 @@ bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 processed_updates = set()
 _pending_mail_drafts: dict[int, dict] = {}
+_memory_agent = None  # initialized in startup()
+_MEMORY_INTENTS = {"personal", "work", "research"}
 
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
@@ -306,8 +308,9 @@ async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="
         await bot.send_message(chat_id=chat_id, text=f"Kalender-Fehler: {str(e)}")
 
 
-async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False):
+async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False) -> str:
     bot = Bot(token=TELEGRAM_TOKEN)
+    answer = ""
     try:
         kwargs = {
             "model": model,
@@ -320,7 +323,6 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
 
         response = claude.messages.create(**kwargs)
 
-        answer = ""
         for block in response.content:
             if hasattr(block, "text"):
                 answer += block.text
@@ -331,7 +333,9 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
             answer = answer[:4000] + "\n[...]"
         await bot.send_message(chat_id=chat_id, text=answer)
     except Exception as e:
-        await bot.send_message(chat_id=chat_id, text=f"Fehler: {str(e)}")
+        answer = f"Fehler: {str(e)}"
+        await bot.send_message(chat_id=chat_id, text=answer)
+    return answer
 
 async def send_briefing():
     chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -380,6 +384,18 @@ async def handle_message(update, context):
         )
         return
 
+    memory_context = ""
+    if _memory_agent and intent in _MEMORY_INTENTS:
+        try:
+            memories = await _memory_agent.retrieve(text)
+            if memories:
+                bullet_list = "\n".join(f"• {m}" for m in memories)
+                memory_context = (
+                    f"Kontext aus früheren Gesprächen mit Philipp:\n{bullet_list}\n\n"
+                )
+        except Exception as e:
+            logger.warning("Memory retrieval failed: %s", e)
+
     logger.info(f"Intent: {intent} | Nachricht: {text}")
 
     if intent == "calendar":
@@ -403,13 +419,15 @@ async def handle_message(update, context):
 
     if intent == "research":
         await update.message.reply_text("Recherchiere im Web...")
-        await ask_claude(
+        answer = await ask_claude(
             chat_id=chat_id,
-            system="Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
+            system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
             user=text,
             model="claude-sonnet-4-6",
             use_web_search=True
         )
+        if _memory_agent:
+            asyncio.create_task(_memory_agent.extract(text, answer, source="research"))
 
     elif intent == "coding":
         mode = params.get("mode", "action")
@@ -445,13 +463,15 @@ async def handle_message(update, context):
 
     elif intent == "work":
         await update.message.reply_text("Analysiere...")
-        await ask_claude(
+        answer = await ask_claude(
             chat_id=chat_id,
-            system="Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
+            system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
             user=text,
             model="claude-sonnet-4-6",
             use_web_search=True
         )
+        if _memory_agent:
+            asyncio.create_task(_memory_agent.extract(text, answer, source="work"))
 
     elif intent == "news":
         await update.message.reply_text("📰 Lade AI-News...")
@@ -529,6 +549,18 @@ async def handle_message(update, context):
         msg = await build_briefing()
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+    elif intent == "memory":
+        mode = params.get("mode", "list")
+        query = params.get("query")
+        if not _memory_agent:
+            await update.message.reply_text("Memory-System nicht initialisiert.")
+            return
+        if mode == "delete":
+            msg = await _memory_agent.delete_memory(query)
+        else:
+            msg = await _memory_agent.list_memories()
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
     else:
         await update.message.reply_text("Denke nach...")
         personal_system = (
@@ -546,12 +578,14 @@ async def handle_message(update, context):
             "- Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte "
             "normal und hilfreich."
         )
-        await ask_claude(
+        answer = await ask_claude(
             chat_id=chat_id,
-            system=personal_system,
+            system=memory_context + personal_system,
             user=text,
             model="claude-haiku-4-5-20251001"
         )
+        if _memory_agent:
+            asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
@@ -647,6 +681,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def startup():
     from coding_agent import _ensure_init
     await _ensure_init()
+    global _memory_agent
+    from db import MemoryDB
+    from memory_agent import MemoryAgent
+    _memory_db = MemoryDB()
+    await _memory_db.init()
+    _memory_agent = MemoryAgent(_memory_db)
+    logger.info("MemoryDB initialisiert")
     projects = await list_projects()
     logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))

@@ -34,6 +34,11 @@ def pytest_configure(config):
     os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_token_12345:test_string")
     os.environ.setdefault("OPENAI_API_KEY", "test_key_for_tests")
 
+    # Mock missing optional packages so agents.main can be imported without them installed
+    for _mod in ("msal", "requests"):
+        if _mod not in sys.modules:
+            sys.modules[_mod] = MagicMock()
+
     # Patch telegram.ext.Application.builder at import time
     mock_bot_app = MagicMock()
     mock_bot_app.initialize = AsyncMock()
