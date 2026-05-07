@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, PlainTextResponse
 from telegram import Update, Bot
+from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import anthropic
 
@@ -44,6 +45,19 @@ app = FastAPI()
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 processed_updates = set()
+
+
+async def send_typing(chat_id: int):
+    bot = Bot(token=TELEGRAM_TOKEN)
+    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+
+async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
+    while not stop_event.is_set():
+        await send_typing(chat_id)
+        await asyncio.sleep(4)
+
+
 _pending_mail_drafts: dict[int, dict] = {}
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
@@ -408,14 +422,19 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         return
 
     if intent == "research":
-        await update.message.reply_text("Recherchiere im Web...")
-        answer = await ask_claude(
-            chat_id=chat_id,
-            system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
-            user=text,
-            model="claude-sonnet-4-6",
-            use_web_search=True
-        )
+        stop = asyncio.Event()
+        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+        try:
+            answer = await ask_claude(
+                chat_id=chat_id,
+                system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
+                user=text,
+                model="claude-sonnet-4-6",
+                use_web_search=True,
+            )
+        finally:
+            stop.set()
+            await typing_task
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="research"))
 
@@ -452,14 +471,19 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             asyncio.create_task(run_coding_action(text, project, chat_id))
 
     elif intent == "work":
-        await update.message.reply_text("Analysiere...")
-        answer = await ask_claude(
-            chat_id=chat_id,
-            system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
-            user=text,
-            model="claude-sonnet-4-6",
-            use_web_search=True
-        )
+        stop = asyncio.Event()
+        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+        try:
+            answer = await ask_claude(
+                chat_id=chat_id,
+                system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
+                user=text,
+                model="claude-sonnet-4-6",
+                use_web_search=True,
+            )
+        finally:
+            stop.set()
+            await typing_task
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="work"))
 
@@ -552,7 +576,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     else:
-        await update.message.reply_text("Denke nach...")
+        await send_typing(chat_id)
         personal_system = (
             "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
             "Wichtig zu deinen Fähigkeiten:\n"
@@ -572,7 +596,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             chat_id=chat_id,
             system=memory_context + personal_system,
             user=text,
-            model="claude-haiku-4-5-20251001"
+            model="claude-sonnet-4-6",
         )
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))

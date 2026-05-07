@@ -36,12 +36,13 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
             "intent": "personal", "confidence": 8, "params": {}, "reasoning": "test"
         }):
             with patch("agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"):
-                update = MagicMock()
-                update.update_id = 99991
-                update.message.text = "Wie geht's dir?"
-                update.message.chat_id = 123
-                update.message.reply_text = AsyncMock()
-                asyncio.run(main_module.handle_message(update, None))
+                with patch("agents.main.send_typing", new_callable=AsyncMock):
+                    update = MagicMock()
+                    update.update_id = 99991
+                    update.message.text = "Wie geht's dir?"
+                    update.message.chat_id = 123
+                    update.message.reply_text = AsyncMock()
+                    asyncio.run(main_module.handle_message(update, None))
 
     assert len(called_with) == 1
     assert called_with[0] == "Wie geht's dir?"
