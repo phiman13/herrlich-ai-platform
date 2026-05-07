@@ -360,18 +360,7 @@ async def start(update, context):
         "Personal: 'Was sind gute Laufschuhe?'"
     )
 
-async def handle_message(update, context):
-    update_id = update.update_id
-    if update_id in processed_updates:
-        logger.info(f"Duplikat ignoriert: update_id={update_id}")
-        return
-    processed_updates.add(update_id)
-    if len(processed_updates) > 1000:
-        processed_updates.clear()
-
-    text = update.message.text
-    chat_id = update.message.chat_id
-
+async def _process_text(text: str, chat_id: int, update) -> None:
     result = await route_with_llm(text)
     intent = result["intent"]
     params = result["params"]
@@ -586,6 +575,20 @@ async def handle_message(update, context):
         )
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+
+
+async def handle_message(update, context):
+    update_id = update.update_id
+    if update_id in processed_updates:
+        logger.info(f"Duplikat ignoriert: update_id={update_id}")
+        return
+    processed_updates.add(update_id)
+    if len(processed_updates) > 1000:
+        processed_updates.clear()
+
+    text = update.message.text
+    chat_id = update.message.chat_id
+    await _process_text(text, chat_id, update)
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
