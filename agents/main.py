@@ -61,6 +61,8 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 _pending_mail_drafts: dict[int, dict] = {}
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
+_conversation_db = None  # initialized in startup()
+_HISTORY_INTENTS = {"personal", "work", "research"}
 
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
@@ -323,7 +325,7 @@ async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="
         await bot.send_message(chat_id=chat_id, text=f"Kalender-Fehler: {str(e)}")
 
 
-async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False) -> str:
+async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False, history: list[dict] | None = None) -> str:
     bot = Bot(token=TELEGRAM_TOKEN)
     answer = ""
     try:
@@ -331,7 +333,7 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
             "model": model,
             "max_tokens": 2048,
             "system": system,
-            "messages": [{"role": "user", "content": user}]
+            "messages": [*(history or []), {"role": "user", "content": user}]
         }
         if use_web_search:
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
@@ -402,6 +404,14 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     logger.info(f"Intent: {intent} | Nachricht: {text}")
 
+    answer: str = ""
+    history: list[dict] = []
+    if _conversation_db and intent in _HISTORY_INTENTS:
+        try:
+            history = await _conversation_db.get_recent(chat_id, n=20)
+        except Exception as e:
+            logger.warning("History load failed: %s", e)
+
     if intent == "calendar":
         mode = params.get("mode", "read")
         kind = params.get("kind")
@@ -431,6 +441,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                 user=text,
                 model="claude-sonnet-4-6",
                 use_web_search=True,
+                history=history,
             )
         finally:
             stop.set()
@@ -480,6 +491,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                 user=text,
                 model="claude-sonnet-4-6",
                 use_web_search=True,
+                history=history,
             )
         finally:
             stop.set()
@@ -597,9 +609,17 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             system=memory_context + personal_system,
             user=text,
             model="claude-sonnet-4-6",
+            history=history,
         )
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+
+    if _conversation_db and intent in _HISTORY_INTENTS and answer:
+        try:
+            await _conversation_db.save(chat_id, "user", text)
+            await _conversation_db.save(chat_id, "assistant", answer)
+        except Exception as e:
+            logger.warning("History save failed: %s", e)
 
 
 async def handle_message(update, context):
@@ -730,13 +750,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def startup():
     from coding_agent import _ensure_init
     await _ensure_init()
-    global _memory_agent
+    global _memory_agent, _conversation_db
     from db import MemoryDB
     from memory_agent import MemoryAgent
     _memory_db = MemoryDB()
     await _memory_db.init()
     _memory_agent = MemoryAgent(_memory_db)
     logger.info("MemoryDB initialisiert")
+    from db import ConversationDB
+    _conv_db = ConversationDB()
+    await _conv_db.init()
+    _conversation_db = _conv_db
+    logger.info("ConversationDB initialisiert")
     projects = await list_projects()
     logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))

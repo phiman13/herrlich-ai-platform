@@ -50,3 +50,80 @@ def test_personal_intent_uses_sonnet():
 
     call_kwargs = mock_ask.call_args.kwargs
     assert call_kwargs.get("model") == "claude-sonnet-4-6"
+
+
+def test_ask_claude_injects_history():
+    history = [
+        {"role": "user", "content": "Was ist Python?"},
+        {"role": "assistant", "content": "Python ist eine Programmiersprache."},
+    ]
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="Antwort")]
+
+    with patch("agents.main.claude") as mock_claude, \
+         patch("agents.main.Bot") as mock_bot_cls:
+        mock_bot_cls.return_value.send_message = AsyncMock()
+        mock_claude.messages.create.return_value = mock_response
+        asyncio.run(main_module.ask_claude(
+            chat_id=123,
+            system="system",
+            user="Wie alt ist es?",
+            history=history,
+        ))
+
+    call_kwargs = mock_claude.messages.create.call_args.kwargs
+    messages = call_kwargs["messages"]
+    assert messages[0] == {"role": "user", "content": "Was ist Python?"}
+    assert messages[1] == {"role": "assistant", "content": "Python ist eine Programmiersprache."}
+    assert messages[2] == {"role": "user", "content": "Wie alt ist es?"}
+
+
+def test_history_saved_after_personal_intent():
+    mock_db = MagicMock()
+    mock_db.get_recent = AsyncMock(return_value=[])
+    mock_db.save = AsyncMock()
+    main_module._conversation_db = mock_db
+
+    with patch("agents.main.route_with_llm", return_value={
+        "intent": "personal", "confidence": 9, "params": {}, "reasoning": "test"
+    }):
+        with patch("agents.main.ask_claude", new_callable=AsyncMock, return_value="Antwort auf Hallo"):
+            with patch("agents.main.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 77772
+                update.message.text = "Hallo"
+                update.message.chat_id = 123
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
+
+    save_calls = mock_db.save.call_args_list
+    assert any(c.args == (123, "user", "Hallo") for c in save_calls)
+    assert any(c.args == (123, "assistant", "Antwort auf Hallo") for c in save_calls)
+
+    main_module._conversation_db = None
+
+
+def test_history_not_saved_for_calendar_intent():
+    mock_db = MagicMock()
+    mock_db.get_recent = AsyncMock(return_value=[])
+    mock_db.save = AsyncMock()
+    main_module._conversation_db = mock_db
+
+    with patch("agents.main.route_with_llm", return_value={
+        "intent": "calendar", "confidence": 9,
+        "params": {"mode": "read", "kind": "today", "start": None, "end": None,
+                   "title": None, "calendar_name": None},
+        "reasoning": "test",
+    }):
+        with patch("agents.main.handle_calendar", new_callable=AsyncMock):
+            update = MagicMock()
+            update.update_id = 77773
+            update.message.text = "Was habe ich heute?"
+            update.message.chat_id = 123
+            update.message.reply_text = AsyncMock()
+            asyncio.run(main_module.handle_message(update, None))
+
+    mock_db.save.assert_not_called()
+
+    main_module._conversation_db = None
