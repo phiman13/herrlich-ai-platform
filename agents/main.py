@@ -566,18 +566,17 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             await update.message.reply_text("Kein Titel angegeben.")
             return
         try:
-            from datetime import date
+            from ntfy_agent import send_reminder
 
-            due_date = date.fromisoformat(due_date_str) if due_date_str else None
-            await asyncio.to_thread(
-                calendar_agent.create_reminder, title, due_date, list_name
-            )
+            await asyncio.to_thread(send_reminder, title, due_date_str, list_name)
             due_str = f" (fällig: {due_date_str})" if due_date_str else ""
-            await update.message.reply_text(f"✅ Reminder '{title}'{due_str} erstellt.")
-        except Exception as e:
-            logger.exception("create_reminder fehlgeschlagen")
             await update.message.reply_text(
-                f"❌ Reminder konnte nicht erstellt werden: {e}"
+                f"✅ Erinnerung '{title}'{due_str} erstellt."
+            )
+        except Exception as e:
+            logger.exception("reminder_write fehlgeschlagen")
+            await update.message.reply_text(
+                f"❌ Erinnerung konnte nicht erstellt werden: {e}"
             )
         return
 
