@@ -63,6 +63,7 @@ _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _conversation_db = None  # initialized in startup()
 _HISTORY_INTENTS = {"personal", "work", "research"}
+_profile_agent = None  # initialized in startup()
 
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
@@ -391,16 +392,21 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         return
 
     memory_context = ""
-    if _memory_agent and intent in _MEMORY_INTENTS:
-        try:
-            memories = await _memory_agent.retrieve(text)
-            if memories:
-                bullet_list = "\n".join(f"• {m}" for m in memories)
-                memory_context = (
-                    f"Kontext aus früheren Gesprächen mit Philipp:\n{bullet_list}\n\n"
-                )
-        except Exception as e:
-            logger.warning("Memory retrieval failed: %s", e)
+    if intent in _MEMORY_INTENTS:
+        if _profile_agent:
+            try:
+                profile = _profile_agent.load()
+                memory_context += f"=== Philipps Profil ===\n{profile}\n\n"
+            except Exception as e:
+                logger.warning("Profile load failed: %s", e)
+        if _memory_agent:
+            try:
+                memories = await _memory_agent.retrieve()
+                if memories:
+                    bullet_list = "\n".join(f"• {m}" for m in memories)
+                    memory_context += f"=== Erinnerungen ===\n{bullet_list}\n\n"
+            except Exception as e:
+                logger.warning("Memory retrieval failed: %s", e)
 
     logger.info(f"Intent: {intent} | Nachricht: {text}")
 
@@ -626,6 +632,12 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
+    if _profile_agent and intent in _HISTORY_INTENTS and answer and not answer.startswith("Fehler:"):
+        conversation = f"Philipp: {text}\n\nJarvis: {answer}"
+        coro = _profile_agent.update(conversation)
+        if asyncio.iscoroutine(coro):
+            asyncio.create_task(coro)
+
 
 async def handle_message(update, context):
     update_id = update.update_id
@@ -755,7 +767,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def startup():
     from coding_agent import _ensure_init
     await _ensure_init()
-    global _memory_agent, _conversation_db
+    global _memory_agent, _conversation_db, _profile_agent
     from db import MemoryDB
     from memory_agent import MemoryAgent
     _memory_db = MemoryDB()
@@ -767,6 +779,14 @@ async def startup():
     await _conv_db.init()
     _conversation_db = _conv_db
     logger.info("ConversationDB initialisiert")
+    from agents.profile_agent import ProfileAgent
+    _profile_agent = ProfileAgent()
+    _profile_agent.load()
+    logger.info("ProfileAgent initialisiert")
+    task = asyncio.create_task(_memory_agent.migrate_embeddings())
+    task.add_done_callback(
+        lambda t: logger.error("Migration failed: %s", t.exception()) if t.exception() else None
+    )
     projects = await list_projects()
     logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))

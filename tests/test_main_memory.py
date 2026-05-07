@@ -25,10 +25,10 @@ def test_memory_agent_is_none_by_default():
 
 def test_retrieve_called_for_personal_intent(fresh_memory_agent):
     """retrieve() is called when intent is personal."""
-    called_with = []
+    called = []
 
-    async def fake_retrieve(query: str):
-        called_with.append(query)
+    async def fake_retrieve():
+        called.append(True)
         return []
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
@@ -44,16 +44,15 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
                     update.message.reply_text = AsyncMock()
                     asyncio.run(main_module.handle_message(update, None))
 
-    assert len(called_with) == 1
-    assert called_with[0] == "Wie geht's dir?"
+    assert len(called) == 1
 
 
 def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
     """retrieve() is NOT called for calendar intent."""
     called = []
 
-    async def fake_retrieve(query):
-        called.append(query)
+    async def fake_retrieve():
+        called.append(True)
         return []
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):

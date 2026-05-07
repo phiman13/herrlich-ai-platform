@@ -128,3 +128,25 @@ def test_history_not_saved_for_calendar_intent():
     mock_db.get_recent.assert_not_called()
 
     main_module._conversation_db = None
+
+
+def test_profile_content_injected_for_personal_intent():
+    mock_profile = MagicMock()
+    mock_profile.load.return_value = "## Beruf & Rolle\nStrategischer Berater\n"
+    main_module._profile_agent = mock_profile
+
+    with patch("agents.main.route_with_llm", return_value={
+        "intent": "personal", "confidence": 9, "params": {}, "reasoning": "test"
+    }):
+        with patch("agents.main.ask_claude", new_callable=AsyncMock, return_value="ok") as mock_ask:
+            with patch("agents.main.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 88881
+                update.message.text = "Was soll ich tun?"
+                update.message.chat_id = 456
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
+
+    main_module._profile_agent = None
+    system_arg = mock_ask.call_args.kwargs.get("system", "")
+    assert "Strategischer Berater" in system_arg
