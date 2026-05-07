@@ -512,11 +512,14 @@ class CalendarAgent:
             todo.add("summary", title)
             todo.add("uid", str(uuid.uuid4()))
             todo.add("status", "NEEDS-ACTION")
+            todo.add("dtstamp", datetime.now(timezone.utc))
             if due_date is not None:
                 todo.add("due", due_date)
 
             ical.add_component(todo)
-            target.save_todo(ical.to_ical().decode("utf-8"))
+            ical_str = ical.to_ical().decode("utf-8")
+            logger.debug("VTODO iCal:\n%s", ical_str)
+            target.save_todo(ical_str)
             logger.info("Reminder erstellt: '%s' in '%s'", title, target.name)
             return
 
