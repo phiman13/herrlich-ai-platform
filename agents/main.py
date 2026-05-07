@@ -1,7 +1,6 @@
 import os
 import re
 import sys
-import json
 import logging
 import asyncio
 from datetime import datetime, timedelta
@@ -9,7 +8,13 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, PlainTextResponse
 from telegram import Update, Bot
 from telegram.constants import ChatAction
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 import anthropic
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -22,18 +27,33 @@ from coding_agent import handle_coding_query, run_coding_action, add_backlog_ite
 from vps import list_projects
 from briefing_agent import build_briefing
 from news_agent import get_ai_news
-from tasks_agent import get_tasks, add_task, complete_task, create_list, delete_list, rename_list
+from tasks_agent import (
+    get_tasks,
+    add_task,
+    complete_task,
+    create_list,
+    delete_list,
+    rename_list,
+)
 from voice_agent import transcribe
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
 calendar_agent = CalendarAgent()
 
-_WEEKDAYS_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+_WEEKDAYS_DE = [
+    "Montag",
+    "Dienstag",
+    "Mittwoch",
+    "Donnerstag",
+    "Freitag",
+    "Samstag",
+    "Sonntag",
+]
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("jarvis")
@@ -65,6 +85,7 @@ _conversation_db = None  # initialized in startup()
 _HISTORY_INTENTS = {"personal", "work", "research"}
 _profile_agent = None  # initialized in startup()
 
+
 def detect_calendar_window(text):
     """Return (kind, start, end) or None. kind is 'today'/'tomorrow'/'week'/'next'.
 
@@ -77,7 +98,12 @@ def detect_calendar_window(text):
     t = text.lower()
     now = datetime.now(BERLIN)
 
-    if "nächster termin" in t or "naechster termin" in t or "wann ist mein nächster" in t or "wann ist mein naechster" in t:
+    if (
+        "nächster termin" in t
+        or "naechster termin" in t
+        or "wann ist mein nächster" in t
+        or "wann ist mein naechster" in t
+    ):
         return ("next", None, None)
     if "diese woche" in t or "woche kalender" in t or "termine woche" in t:
         start = now
@@ -86,12 +112,18 @@ def detect_calendar_window(text):
             hour=23, minute=59, second=59, microsecond=999999
         )
         return ("week", start, sunday)
-    if re.search(r'\bheute\b', t) and ("was habe ich" in t or "termine" in t or "kalender" in t):
+    if re.search(r"\bheute\b", t) and (
+        "was habe ich" in t or "termine" in t or "kalender" in t
+    ):
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
         return ("today", start, end)
-    if re.search(r'\bmorgen\b', t) and ("was habe ich" in t or "termine" in t or "kalender" in t):
-        start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    if re.search(r"\bmorgen\b", t) and (
+        "was habe ich" in t or "termine" in t or "kalender" in t
+    ):
+        start = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         end = start + timedelta(days=1)
         return ("tomorrow", start, end)
     return None
@@ -116,14 +148,20 @@ def format_calendar_response(kind, events, query_start=None):
         ev = events  # single event or None
         if ev is None:
             return "Kein kommender Termin gefunden."
-        time_part = "ganztägig" if getattr(ev, "all_day", False) else f"um {ev.start.strftime('%H:%M')}"
+        time_part = (
+            "ganztägig"
+            if getattr(ev, "all_day", False)
+            else f"um {ev.start.strftime('%H:%M')}"
+        )
         line = f"Nächster Termin: {_fmt_date(ev.start)} {time_part} — {ev.title}"
         if ev.location:
             line += f" ({ev.location})"
         return line
 
     if not events:
-        label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(kind, "")
+        label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(
+            kind, ""
+        )
         return f"Keine Termine {label}.".strip()
 
     if kind in ("today", "tomorrow"):
@@ -158,8 +196,7 @@ def format_mail_list(mails, header):
         subject = m.subject.replace("*", "").replace("_", "").replace("`", "")[:80]
         sender_clean = sender.replace("*", "").replace("_", "").replace("`", "")[:40]
         lines.append(
-            f"{unread_marker}{attach_marker}*{sender_clean}* — {time_str}\n"
-            f"  {subject}"
+            f"{unread_marker}{attach_marker}*{sender_clean}* — {time_str}\n  {subject}"
         )
     return "\n\n".join(lines)
 
@@ -199,17 +236,15 @@ async def handle_mail(chat_id, text, params):
         }
 
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        keyboard = [[
-            InlineKeyboardButton("📤 Senden", callback_data="mail:send"),
-            InlineKeyboardButton("❌ Abbrechen", callback_data="mail:cancel"),
-        ]]
 
-        preview = (
-            f"📝 *Entwurf*\n\n"
-            f"*An:* {to_email}\n"
-            f"*Betreff:* {subject}\n\n"
-            f"{body}"
-        )
+        keyboard = [
+            [
+                InlineKeyboardButton("📤 Senden", callback_data="mail:send"),
+                InlineKeyboardButton("❌ Abbrechen", callback_data="mail:cancel"),
+            ]
+        ]
+
+        preview = f"📝 *Entwurf*\n\n*An:* {to_email}\n*Betreff:* {subject}\n\n{body}"
         await bot.send_message(
             chat_id=chat_id,
             text=preview,
@@ -283,17 +318,30 @@ async def handle_mail(chat_id, text, params):
     await bot.send_message(chat_id=chat_id, text=response, parse_mode="Markdown")
 
 
-async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="read", title=None, calendar_name=None):
+async def handle_calendar(
+    chat_id,
+    text,
+    kind=None,
+    start=None,
+    end=None,
+    mode="read",
+    title=None,
+    calendar_name=None,
+):
     bot = Bot(token=TELEGRAM_TOKEN)
 
     if mode == "write":
         if not title or not start:
-            await bot.send_message(chat_id=chat_id, text="Bitte Titel und Startzeit angeben.")
+            await bot.send_message(
+                chat_id=chat_id, text="Bitte Titel und Startzeit angeben."
+            )
             return
         if end is None:
             end = start + timedelta(hours=1)
         try:
-            await asyncio.to_thread(calendar_agent.create_event, title, start, end, calendar_name)
+            await asyncio.to_thread(
+                calendar_agent.create_event, title, start, end, calendar_name
+            )
             cal_note = f" in '{calendar_name}'" if calendar_name else ""
             await bot.send_message(
                 chat_id=chat_id,
@@ -301,7 +349,9 @@ async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="
                 parse_mode="Markdown",
             )
         except Exception as e:
-            await bot.send_message(chat_id=chat_id, text=f"❌ Termin konnte nicht erstellt werden: {e}")
+            await bot.send_message(
+                chat_id=chat_id, text=f"❌ Termin konnte nicht erstellt werden: {e}"
+            )
         return
 
     if start is None or end is None:
@@ -326,7 +376,14 @@ async def handle_calendar(chat_id, text, kind=None, start=None, end=None, mode="
         await bot.send_message(chat_id=chat_id, text=f"Kalender-Fehler: {str(e)}")
 
 
-async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", use_web_search=False, history: list[dict] | None = None) -> str:
+async def ask_claude(
+    chat_id,
+    system,
+    user,
+    model="claude-haiku-4-5-20251001",
+    use_web_search=False,
+    history: list[dict] | None = None,
+) -> str:
     bot = Bot(token=TELEGRAM_TOKEN)
     answer = ""
     try:
@@ -334,7 +391,7 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
             "model": model,
             "max_tokens": 2048,
             "system": system,
-            "messages": [*(history or []), {"role": "user", "content": user}]
+            "messages": [*(history or []), {"role": "user", "content": user}],
         }
         if use_web_search:
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
@@ -355,6 +412,7 @@ async def ask_claude(chat_id, system, user, model="claude-haiku-4-5-20251001", u
         await bot.send_message(chat_id=chat_id, text=answer)
     return answer
 
+
 async def send_briefing():
     chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not chat_id_str:
@@ -363,7 +421,9 @@ async def send_briefing():
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
     try:
         msg = await build_briefing()
-        await bot.send_message(chat_id=int(chat_id_str), text=msg, parse_mode="Markdown")
+        await bot.send_message(
+            chat_id=int(chat_id_str), text=msg, parse_mode="Markdown"
+        )
     except Exception as e:
         logger.exception(f"Briefing-Fehler: {e}")
 
@@ -377,6 +437,7 @@ async def start(update, context):
         "Work: 'Fass mir diesen Text zusammen'\n"
         "Personal: 'Was sind gute Laufschuhe?'"
     )
+
 
 async def _process_text(text: str, chat_id: int, update: Update) -> None:
     routing = await route_with_llm(text)
@@ -428,8 +489,14 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         title = params.get("title")
         calendar_name = params.get("calendar_name")
         await handle_calendar(
-            chat_id=chat_id, text=text, kind=kind, start=start, end=end,
-            mode=mode, title=title, calendar_name=calendar_name,
+            chat_id=chat_id,
+            text=text,
+            kind=kind,
+            start=start,
+            end=end,
+            mode=mode,
+            title=title,
+            calendar_name=calendar_name,
         )
         return
 
@@ -443,7 +510,8 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         try:
             answer = await ask_claude(
                 chat_id=chat_id,
-                system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
+                system=memory_context
+                + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
                 user=text,
                 model="claude-sonnet-4-6",
                 use_web_search=True,
@@ -482,10 +550,35 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                     parse_mode="Markdown",
                 )
             else:
-                await update.message.reply_text("❌ Konnte Backlog nicht aktualisieren.")
+                await update.message.reply_text(
+                    "❌ Konnte Backlog nicht aktualisieren."
+                )
 
         else:  # action
             asyncio.create_task(run_coding_action(text, project, chat_id))
+
+    elif intent == "reminder_write":
+        title = params.get("title", "")
+        due_date_str = params.get("due_date")
+        list_name = params.get("list_name")
+        if not title:
+            await update.message.reply_text("Kein Titel angegeben.")
+            return
+        try:
+            from datetime import date
+
+            due_date = date.fromisoformat(due_date_str) if due_date_str else None
+            await asyncio.to_thread(
+                calendar_agent.create_reminder, title, due_date, list_name
+            )
+            due_str = f" (fällig: {due_date_str})" if due_date_str else ""
+            await update.message.reply_text(f"✅ Reminder '{title}'{due_str} erstellt.")
+        except Exception as e:
+            logger.exception("create_reminder fehlgeschlagen")
+            await update.message.reply_text(
+                f"❌ Reminder konnte nicht erstellt werden: {e}"
+            )
+        return
 
     elif intent == "work":
         stop = asyncio.Event()
@@ -493,7 +586,8 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         try:
             answer = await ask_claude(
                 chat_id=chat_id,
-                system=memory_context + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
+                system=memory_context
+                + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
                 user=text,
                 model="claude-sonnet-4-6",
                 use_web_search=True,
@@ -520,7 +614,9 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
         if mode == "read":
             task_result = await asyncio.to_thread(get_tasks, list_name)
-            await update.message.reply_text(task_result or "Keine offenen Tasks.", parse_mode="Markdown")
+            await update.message.reply_text(
+                task_result or "Keine offenen Tasks.", parse_mode="Markdown"
+            )
 
         elif mode == "write" and item:
             if not list_name:
@@ -529,7 +625,8 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                 success = await asyncio.to_thread(add_task, list_name, item)
                 if success:
                     await update.message.reply_text(
-                        f"✅ '{item}' zu *{list_name}* hinzugefügt.", parse_mode="Markdown"
+                        f"✅ '{item}' zu *{list_name}* hinzugefügt.",
+                        parse_mode="Markdown",
                     )
                 else:
                     await update.message.reply_text("❌ Konnte Task nicht hinzufügen.")
@@ -541,40 +638,56 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                 success = await asyncio.to_thread(complete_task, list_name, item)
                 if success:
                     await update.message.reply_text(
-                        f"✅ '{item}' in *{list_name}* als erledigt markiert.", parse_mode="Markdown"
+                        f"✅ '{item}' in *{list_name}* als erledigt markiert.",
+                        parse_mode="Markdown",
                     )
                 else:
-                    await update.message.reply_text("❌ Task nicht gefunden oder bereits erledigt.")
+                    await update.message.reply_text(
+                        "❌ Task nicht gefunden oder bereits erledigt."
+                    )
 
         elif mode == "create_list" and list_name:
             success = await asyncio.to_thread(create_list, list_name)
             if success:
                 router._todo_lists_cache = ([], 0.0)
-                await update.message.reply_text(f"✅ Liste *{list_name}* angelegt.", parse_mode="Markdown")
+                await update.message.reply_text(
+                    f"✅ Liste *{list_name}* angelegt.", parse_mode="Markdown"
+                )
             else:
-                await update.message.reply_text("❌ Liste konnte nicht angelegt werden.")
+                await update.message.reply_text(
+                    "❌ Liste konnte nicht angelegt werden."
+                )
 
         elif mode == "delete_list" and list_name:
             success = await asyncio.to_thread(delete_list, list_name)
             if success:
                 router._todo_lists_cache = ([], 0.0)
-                await update.message.reply_text(f"✅ Liste *{list_name}* gelöscht.", parse_mode="Markdown")
+                await update.message.reply_text(
+                    f"✅ Liste *{list_name}* gelöscht.", parse_mode="Markdown"
+                )
             else:
-                await update.message.reply_text(f"❌ Liste '{list_name}' nicht gefunden oder konnte nicht gelöscht werden.")
+                await update.message.reply_text(
+                    f"❌ Liste '{list_name}' nicht gefunden oder konnte nicht gelöscht werden."
+                )
 
         elif mode == "rename_list":
             new_name = params.get("new_name")
             if not list_name or not new_name:
-                await update.message.reply_text("Bitte alter und neuer Listenname angeben.")
+                await update.message.reply_text(
+                    "Bitte alter und neuer Listenname angeben."
+                )
             else:
                 success = await asyncio.to_thread(rename_list, list_name, new_name)
                 if success:
                     router._todo_lists_cache = ([], 0.0)
                     await update.message.reply_text(
-                        f"✅ Liste *{list_name}* → *{new_name}* umbenannt.", parse_mode="Markdown"
+                        f"✅ Liste *{list_name}* → *{new_name}* umbenannt.",
+                        parse_mode="Markdown",
                     )
                 else:
-                    await update.message.reply_text(f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen.")
+                    await update.message.reply_text(
+                        f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen."
+                    )
 
     elif intent == "briefing":
         await update.message.reply_text("⏳ Briefing wird erstellt...")
@@ -599,7 +712,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             "Wichtig zu deinen Fähigkeiten:\n"
             "- Du HAST Zugriff auf Philipps Apple-Kalender (über einen eigenen Calendar-Handler). "
             "Wenn die Frage nach Kalender oder Terminen klingt, antworte: "
-            "\"Diese Frage hätte eigentlich an meinen Calendar-Handler gehen sollen — das war ein "
+            '"Diese Frage hätte eigentlich an meinen Calendar-Handler gehen sollen — das war ein '
             "Routing-Fehler. Bitte stell die Frage nochmal mit klareren Worten wie 'Termine', "
             "'Kalender' oder 'wann habe ich Zeit'.\"\n"
             "- Du KANNST im Web recherchieren (über einen Research-Handler).\n"
@@ -625,14 +738,24 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
 
-    if _conversation_db and intent in _HISTORY_INTENTS and answer and not answer.startswith("Fehler:"):
+    if (
+        _conversation_db
+        and intent in _HISTORY_INTENTS
+        and answer
+        and not answer.startswith("Fehler:")
+    ):
         try:
             await _conversation_db.save(chat_id, "user", text)
             await _conversation_db.save(chat_id, "assistant", answer)
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
-    if _profile_agent and intent in _HISTORY_INTENTS and answer and not answer.startswith("Fehler:"):
+    if (
+        _profile_agent
+        and intent in _HISTORY_INTENTS
+        and answer
+        and not answer.startswith("Fehler:")
+    ):
         conversation = f"Philipp: {text}\n\nJarvis: {answer}"
         asyncio.create_task(_profile_agent.update(conversation))
 
@@ -650,6 +773,7 @@ async def handle_message(update, context):
     chat_id = update.message.chat_id
     await _process_text(text, chat_id, update)
 
+
 async def handle_voice(update, context):
     update_id = update.update_id
     if update_id in processed_updates:
@@ -666,10 +790,13 @@ async def handle_voice(update, context):
         text = await transcribe(ogg_bytes)
     except Exception as e:
         logger.warning("Voice transcription failed: %s", e)
-        await update.message.reply_text("❌ Sprachnachricht konnte nicht transkribiert werden.")
+        await update.message.reply_text(
+            "❌ Sprachnachricht konnte nicht transkribiert werden."
+        )
         return
 
     await _process_text(text, chat_id, update)
+
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
@@ -678,9 +805,11 @@ async def telegram_webhook(request: Request):
     await bot_app.process_update(update)
     return {"ok": True}
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "jarvis-gateway"}
+
 
 @app.get("/oauth/microsoft/login")
 async def microsoft_login(secret: str = ""):
@@ -688,12 +817,16 @@ async def microsoft_login(secret: str = ""):
         raise HTTPException(status_code=403, detail="Forbidden")
     from microsoft_auth import get_login_url
     import secrets as _secrets
+
     state = _secrets.token_urlsafe(16)
     url = get_login_url(state)
     return RedirectResponse(url=url, status_code=302)
 
+
 @app.get("/oauth/microsoft/callback")
-async def microsoft_callback(code: str = "", error: str = "", error_description: str = ""):
+async def microsoft_callback(
+    code: str = "", error: str = "", error_description: str = ""
+):
     if error:
         return PlainTextResponse(
             f"OAuth-Fehler: {error}\n{error_description}",
@@ -703,6 +836,7 @@ async def microsoft_callback(code: str = "", error: str = "", error_description:
         return PlainTextResponse("Kein code-Parameter", status_code=400)
 
     from microsoft_auth import handle_callback
+
     try:
         result = handle_callback(code)
         if "access_token" in result:
@@ -719,8 +853,10 @@ async def microsoft_callback(code: str = "", error: str = "", error_description:
         logger.exception("OAuth-Callback fehlgeschlagen")
         return PlainTextResponse(f"❌ Callback-Fehler: {e}", status_code=500)
 
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from vps import git_push
+
     query = update.callback_query
     await query.answer()
     data = query.data or ""
@@ -730,7 +866,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None)
         success = await git_push(project)
         if success:
-            await query.message.reply_text(f"✅ *{project}* gepusht.", parse_mode="Markdown")
+            await query.message.reply_text(
+                f"✅ *{project}* gepusht.", parse_mode="Markdown"
+            )
         else:
             await query.message.reply_text(f"❌ Push fehlgeschlagen für {project}.")
     elif data == "dismiss":
@@ -743,6 +881,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
             return
         from mail_agent import MailAgent
+
         agent = MailAgent()
         success = await asyncio.to_thread(
             agent.send_mail, draft["to_email"], draft["subject"], draft["body"]
@@ -764,26 +903,40 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @app.on_event("startup")
 async def startup():
     from coding_agent import _ensure_init
+
     await _ensure_init()
     global _memory_agent, _conversation_db, _profile_agent
     from db import MemoryDB
     from memory_agent import MemoryAgent
+
     _memory_db = MemoryDB()
     await _memory_db.init()
     _memory_agent = MemoryAgent(_memory_db)
     logger.info("MemoryDB initialisiert")
     from db import ConversationDB
+
     _conv_db = ConversationDB()
     await _conv_db.init()
     _conversation_db = _conv_db
     logger.info("ConversationDB initialisiert")
     from profile_agent import ProfileAgent
+
     _profile_agent = ProfileAgent()
     _profile_agent.load()  # creates profile file if it doesn't exist yet
     logger.info("ProfileAgent initialisiert")
+    from db import ProactiveDB
+    from proactive_agent import init_proactive
+
+    _proactive_db = ProactiveDB()
+    await _proactive_db.init()
+    init_proactive(_proactive_db, _memory_db)
     task = asyncio.create_task(_memory_agent.migrate_embeddings())
     task.add_done_callback(
-        lambda t: logger.error("Migration failed: %s", t.exception()) if t.exception() else None
+        lambda t: (
+            logger.error("Migration failed: %s", t.exception())
+            if t.exception()
+            else None
+        )
     )
     projects = await list_projects()
     logger.info(f"Workspace projects: {projects}")
@@ -791,18 +944,71 @@ async def startup():
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     bot_app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     from telegram.ext import CallbackQueryHandler
+
     bot_app.add_handler(CallbackQueryHandler(handle_callback))
+    try:
+        from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+
+        _scheduler.add_jobstore(
+            SQLAlchemyJobStore(url="sqlite:////root/.jarvis/jarvis_jobs.db"), "default"
+        )
+        logger.info("APScheduler SQLite-Jobstore konfiguriert")
+    except Exception as e:
+        logger.warning("SQLite-Jobstore nicht verfügbar: %s — läuft ohne Persistenz", e)
     _scheduler.add_job(
         send_briefing,
         CronTrigger(hour=7, minute=0, timezone="Europe/Berlin"),
         id="morning_briefing",
         replace_existing=True,
     )
+    _chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if _chat_id_str:
+        _chat_id = int(_chat_id_str)
+        from proactive_agent import (
+            check_important_mails,
+            send_task_reminder,
+            send_weekly_review,
+        )
+
+        _scheduler.add_job(
+            check_important_mails,
+            CronTrigger(hour=9, minute=0, timezone="Europe/Berlin"),
+            args=[_chat_id],
+            id="mail_check_morning",
+            replace_existing=True,
+        )
+        _scheduler.add_job(
+            check_important_mails,
+            CronTrigger(hour=14, minute=0, timezone="Europe/Berlin"),
+            args=[_chat_id],
+            id="mail_check_afternoon",
+            replace_existing=True,
+        )
+        _scheduler.add_job(
+            send_task_reminder,
+            CronTrigger(hour=10, minute=0, timezone="Europe/Berlin"),
+            args=[_chat_id],
+            id="task_reminder_daily",
+            replace_existing=True,
+        )
+        _scheduler.add_job(
+            send_weekly_review,
+            CronTrigger(day_of_week="fri", hour=17, minute=0, timezone="Europe/Berlin"),
+            args=[_chat_id],
+            id="weekly_review_friday",
+            replace_existing=True,
+        )
+        logger.info(
+            "Proaktive Jobs registriert: mail_check x2, task_reminder, weekly_review"
+        )
+    else:
+        logger.warning("TELEGRAM_CHAT_ID nicht gesetzt — proaktive Jobs deaktiviert")
     _scheduler.start()
     logger.info("APScheduler gestartet — Briefing täglich 07:00 Berlin")
     await bot_app.initialize()
     await bot_app.start()
     logger.info("Jarvis gestartet")
+
 
 @app.on_event("shutdown")
 async def shutdown():

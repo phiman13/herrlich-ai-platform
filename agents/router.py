@@ -46,6 +46,7 @@ async def _get_todo_list_names() -> list[str]:
     if names and (time.time() - fetched_at) < _TODO_CACHE_TTL:
         return names
     try:
+
         def _fetch():
             try:
                 from microsoft_auth import get_access_token
@@ -59,6 +60,7 @@ async def _get_todo_list_names() -> list[str]:
             )
             resp.raise_for_status()
             return [lst["displayName"] for lst in resp.json().get("value", [])]
+
         names = await asyncio.to_thread(_fetch)
         _todo_lists_cache = (names, time.time())
     except Exception as e:
@@ -70,6 +72,7 @@ async def _get_calendar_names() -> list[str]:
     global _calendar_names_cache
     if not _calendar_names_cache:
         import os as _os
+
         raw = _os.environ.get("CALENDAR_WHITELIST", "")
         _calendar_names_cache = [w.strip() for w in raw.split(",") if w.strip()]
     return _calendar_names_cache
@@ -81,6 +84,7 @@ async def _get_mail_folder_names() -> list[str]:
     if names and (time.time() - fetched_at) < _MAIL_FOLDER_CACHE_TTL:
         return names
     try:
+
         def _fetch():
             try:
                 from microsoft_auth import get_access_token
@@ -95,6 +99,7 @@ async def _get_mail_folder_names() -> list[str]:
             )
             resp.raise_for_status()
             return [f["displayName"] for f in resp.json().get("value", [])]
+
         names = await asyncio.to_thread(_fetch)
         _mail_folders_cache = (names, time.time())
     except Exception as e:
@@ -225,10 +230,18 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - mode: "list" | "delete"
    - query: string oder null (was gelöscht werden soll; null = neueste Erinnerung)
 
+11. "reminder_write" — Apple Reminder / Erinnerung erstellen.
+   Beispiele: "Erinnere mich morgen an den Anruf", "Erstelle eine Erinnerung: Paket abholen am Freitag"
+
+   Parameter:
+   - title: string (Titel der Erinnerung, Pflichtfeld)
+   - due_date: ISO-Datum (YYYY-MM-DD) oder null (falls kein Datum genannt)
+   - list_name: string oder null (falls eine bestimmte Reminder-Liste genannt)
+
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing" | "memory",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing" | "memory" | "reminder_write",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -260,8 +273,7 @@ async def _build_system_prompt() -> str:
     calendar_str = ", ".join(calendar_names) if calendar_names else "(nicht verfügbar)"
     mail_str = ", ".join(mail_folders) if mail_folders else "(nicht verfügbar)"
     return (
-        _SYSTEM_TEMPLATE
-        .replace("{HEUTE_ISO}", heute)
+        _SYSTEM_TEMPLATE.replace("{HEUTE_ISO}", heute)
         .replace("{PROJECT_LIST}", projects_str)
         .replace("{TODO_LISTS}", todo_str)
         .replace("{CALENDAR_NAMES}", calendar_str)
@@ -293,7 +305,19 @@ async def route_with_llm(text: str) -> dict:
         for field in ("intent", "confidence", "params", "reasoning"):
             if field not in parsed:
                 raise ValueError(f"missing field: {field}")
-        if parsed["intent"] not in {"calendar", "coding", "research", "work", "mail", "personal", "news", "tasks", "briefing", "memory"}:
+        if parsed["intent"] not in {
+            "calendar",
+            "coding",
+            "research",
+            "work",
+            "mail",
+            "personal",
+            "news",
+            "tasks",
+            "briefing",
+            "memory",
+            "reminder_write",
+        }:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed
     except (json.JSONDecodeError, ValueError) as e:
