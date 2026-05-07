@@ -22,6 +22,7 @@ from vps import list_projects
 from briefing_agent import build_briefing
 from news_agent import get_ai_news
 from tasks_agent import get_tasks, add_task, complete_task, create_list, delete_list, rename_list
+from voice_agent import transcribe
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
@@ -590,6 +591,27 @@ async def handle_message(update, context):
     chat_id = update.message.chat_id
     await _process_text(text, chat_id, update)
 
+async def handle_voice(update, context):
+    update_id = update.update_id
+    if update_id in processed_updates:
+        logger.info(f"Duplikat ignoriert: update_id={update_id}")
+        return
+    processed_updates.add(update_id)
+    if len(processed_updates) > 1000:
+        processed_updates.clear()
+
+    chat_id = update.message.chat_id
+    try:
+        voice_file = await update.message.voice.get_file()
+        ogg_bytes = bytes(await voice_file.download_as_bytearray())
+        text = await transcribe(ogg_bytes)
+    except Exception as e:
+        logger.warning("Voice transcription failed: %s", e)
+        await update.message.reply_text("❌ Sprachnachricht konnte nicht transkribiert werden.")
+        return
+
+    await _process_text(text, chat_id, update)
+
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
     data = await request.json()
@@ -695,6 +717,7 @@ async def startup():
     logger.info(f"Workspace projects: {projects}")
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    bot_app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     from telegram.ext import CallbackQueryHandler
     bot_app.add_handler(CallbackQueryHandler(handle_callback))
     _scheduler.add_job(
