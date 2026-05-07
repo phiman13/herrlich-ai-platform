@@ -614,7 +614,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
 
-    if _conversation_db and intent in _HISTORY_INTENTS and answer:
+    if _conversation_db and intent in _HISTORY_INTENTS and answer and not answer.startswith("Fehler:"):
         try:
             await _conversation_db.save(chat_id, "user", text)
             await _conversation_db.save(chat_id, "assistant", answer)

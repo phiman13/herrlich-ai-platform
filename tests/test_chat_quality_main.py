@@ -125,5 +125,6 @@ def test_history_not_saved_for_calendar_intent():
             asyncio.run(main_module.handle_message(update, None))
 
     mock_db.save.assert_not_called()
+    mock_db.get_recent.assert_not_called()
 
     main_module._conversation_db = None
