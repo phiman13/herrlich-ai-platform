@@ -68,6 +68,7 @@ class ICloudCalDAVBackend(CalendarBackend):
         self.whitelist = [w.strip() for w in whitelist if w.strip()]
         self._client = None
         self._calendars = None
+        self._all_calendars = None
 
     def _connect(self):
         if self._calendars is not None:
@@ -82,14 +83,16 @@ class ICloudCalDAVBackend(CalendarBackend):
         )
         principal = self._client.principal()
         all_cals = principal.calendars()
+        self._all_calendars = all_cals
         self._calendars = [
             c for c in all_cals if (c.name or "").strip() in self.whitelist
         ]
         logger.info(
-            "CalDAV connected: %d/%d calendars whitelisted (%s)",
+            "CalDAV connected: %d/%d calendars whitelisted (%s), %d total",
             len(self._calendars),
             len(all_cals),
             [c.name for c in self._calendars],
+            len(all_cals),
         )
 
     def fetch_events(self, start: datetime, end: datetime) -> list[Event]:
@@ -320,7 +323,7 @@ class CalendarAgent:
             except Exception as e:
                 logger.warning("CalDAV connect failed for reminders: %s", e)
                 continue
-            for cal in backend._calendars or []:
+            for cal in backend._all_calendars or []:
                 try:
                     results = cal.search(todo=True)
                 except Exception as e:
@@ -361,7 +364,7 @@ class CalendarAgent:
             except Exception as e:
                 logger.warning("CalDAV connect failed for reminders: %s", e)
                 continue
-            for cal in backend._calendars or []:
+            for cal in backend._all_calendars or []:
                 try:
                     results = cal.search(todo=True)
                 except Exception as e:
@@ -427,7 +430,7 @@ class CalendarAgent:
             except Exception as e:
                 logger.warning("CalDAV connect failed: %s", e)
                 continue
-            for cal in backend._calendars or []:
+            for cal in backend._all_calendars or []:
                 try:
                     results = cal.search(todo=True)
                 except Exception as e:
@@ -473,12 +476,12 @@ class CalendarAgent:
                 backend._connect()
             except Exception as e:
                 raise RuntimeError(f"CalDAV connect fehlgeschlagen: {e}")
-            if not backend._calendars:
+            if not backend._all_calendars:
                 raise RuntimeError("Keine Kalender verfügbar")
 
-            target = backend._calendars[0]
+            target = backend._all_calendars[0]
             if list_name:
-                for cal in backend._calendars:
+                for cal in backend._all_calendars:
                     if (cal.name or "").strip().lower() == list_name.lower():
                         target = cal
                         break

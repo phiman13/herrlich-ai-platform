@@ -238,10 +238,16 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - due_date: ISO-Datum (YYYY-MM-DD) oder null (falls kein Datum genannt)
    - list_name: string oder null (falls eine bestimmte Reminder-Liste genannt)
 
+12. "weather" — Wetterabfragen für die aktuelle Region (Tutzing / München).
+   Beispiele: "Wie wird das Wetter morgen?", "Wetter heute", "Wettervorhersage diese Woche", "Regnet es morgen?"
+
+   Parameter:
+   - period: "today" | "tomorrow" | "week"
+
 ## Output-Format
 
 {{
-  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing" | "memory" | "reminder_write",
+  "intent": "calendar" | "coding" | "research" | "work" | "mail" | "personal" | "news" | "tasks" | "briefing" | "memory" | "reminder_write" | "weather",
   "confidence": 1-10,
   "params": {{ ... intent-spezifische Parameter ... }},
   "reasoning": "kurze Erklärung in einem Satz, warum dieser Intent"
@@ -317,6 +323,7 @@ async def route_with_llm(text: str) -> dict:
             "briefing",
             "memory",
             "reminder_write",
+            "weather",
         }:
             raise ValueError(f"invalid intent: {parsed['intent']}")
         result = parsed

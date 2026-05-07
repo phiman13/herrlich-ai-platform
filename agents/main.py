@@ -36,6 +36,7 @@ from tasks_agent import (
     rename_list,
 )
 from voice_agent import transcribe
+from weather_agent import get_weather
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
@@ -689,6 +690,18 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                         f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen."
                     )
 
+    elif intent == "weather":
+        period = params.get("period", "today")
+        period_label = {
+            "today": "heute",
+            "tomorrow": "morgen",
+            "week": "diese Woche",
+        }.get(period, period)
+        weather = await asyncio.to_thread(get_weather, period)
+        await update.message.reply_text(
+            f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
+        )
+
     elif intent == "briefing":
         await update.message.reply_text("⏳ Briefing wird erstellt...")
         msg = await build_briefing()
@@ -709,18 +722,20 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
     else:
         personal_system = (
             "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
-            "Wichtig zu deinen Fähigkeiten:\n"
-            "- Du HAST Zugriff auf Philipps Apple-Kalender (über einen eigenen Calendar-Handler). "
-            "Wenn die Frage nach Kalender oder Terminen klingt, antworte: "
-            '"Diese Frage hätte eigentlich an meinen Calendar-Handler gehen sollen — das war ein '
-            "Routing-Fehler. Bitte stell die Frage nochmal mit klareren Worten wie 'Termine', "
-            "'Kalender' oder 'wann habe ich Zeit'.\"\n"
-            "- Du KANNST im Web recherchieren (über einen Research-Handler).\n"
-            "- Du KANNST Code in Philipps Projekten ändern (über einen Coding-Handler).\n"
-            "- Wenn die Frage zu einem dieser Bereiche passt, sag ehrlich, dass die Anfrage falsch "
-            "geroutet wurde, statt zu halluzinieren.\n"
-            "- Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte "
-            "normal und hilfreich."
+            "Deine tatsächlichen Fähigkeiten:\n"
+            "- Kalender: Apple Calendar lesen und Termine erstellen (CalDAV)\n"
+            "- Apple Reminders: lesen und erstellen\n"
+            "- Mail: MS365-Posteingang lesen, durchsuchen, Mails schreiben\n"
+            "- Tasks: MS To Do Listen lesen und verwalten\n"
+            "- Wetter: aktuelle Wetterdaten und Vorhersage für Tutzing/München\n"
+            "- KI-News: aktuelle Nachrichten aus der AI-Welt\n"
+            "- Web-Recherche: aktuelle Informationen aus dem Internet\n"
+            "- Coding: Claude Code auf VPS-Projekten ausführen (recipe-app, immo-radar etc.)\n"
+            "- Morning Briefing: tägliche Zusammenfassung\n"
+            "- Erinnerungen: persönliche Fakten und Präferenzen speichern/abrufen\n\n"
+            "Wenn eine Frage zu einem dieser Bereiche gehört aber hierher geroutet wurde, sag das ehrlich "
+            "('Das war ein Routing-Fehler — frag nochmal klarer') statt zu halluzinieren. "
+            "Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte normal."
         )
         stop = asyncio.Event()
         typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
