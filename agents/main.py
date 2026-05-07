@@ -588,7 +588,6 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     else:
-        await send_typing(chat_id)
         personal_system = (
             "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
             "Wichtig zu deinen Fähigkeiten:\n"
@@ -604,13 +603,19 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             "- Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte "
             "normal und hilfreich."
         )
-        answer = await ask_claude(
-            chat_id=chat_id,
-            system=memory_context + personal_system,
-            user=text,
-            model="claude-sonnet-4-6",
-            history=history,
-        )
+        stop = asyncio.Event()
+        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+        try:
+            answer = await ask_claude(
+                chat_id=chat_id,
+                system=memory_context + personal_system,
+                user=text,
+                model="claude-sonnet-4-6",
+                history=history,
+            )
+        finally:
+            stop.set()
+            await typing_task
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
 
