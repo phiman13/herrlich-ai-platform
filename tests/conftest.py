@@ -57,9 +57,5 @@ def mock_ensure_init():
     async def noop():
         pass
 
-    try:
-        with patch("agents.coding_agent._ensure_init", side_effect=noop):
-            yield
-    except (ImportError, AttributeError):
-        # If coding_agent doesn't exist or doesn't have _ensure_init, skip the patch
+    with patch("agents.coding_agent._ensure_init", side_effect=noop):
         yield
