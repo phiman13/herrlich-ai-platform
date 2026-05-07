@@ -16,6 +16,9 @@ logger = logging.getLogger("jarvis.memory")
 MEMORY_INTENTS = {"personal", "work", "research"}
 
 _claude = anthropic.Anthropic()
+CURRENT_MODEL = "intfloat/multilingual-e5-small"
+MARKER_FILE = "/root/.jarvis/.embedding_model"
+
 _embedding_model = None
 
 
@@ -23,7 +26,7 @@ def _get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         from fastembed import TextEmbedding
-        _embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
+        _embedding_model = TextEmbedding(CURRENT_MODEL)
     return _embedding_model
 
 
@@ -62,19 +65,24 @@ class MemoryAgent:
     def __init__(self, db: MemoryDB):
         self.db = db
 
-    async def retrieve(self, query: str) -> list[str]:
+    async def retrieve(self) -> list[str]:
         rows = await self.db.load_all()
-        if not rows:
-            return []
-        query_vec = await asyncio.to_thread(_embed, query)
-        scored: list[tuple[float, str]] = []
+        return [row["content"] for row in rows]
+
+    async def migrate_embeddings(self) -> None:
+        try:
+            with open(MARKER_FILE) as f:
+                if f.read().strip() == CURRENT_MODEL:
+                    return
+        except FileNotFoundError:
+            pass
+        rows = await self.db.load_all()
         for row in rows:
-            mem_vec = np.frombuffer(row["embedding"], dtype=np.float32)
-            sim = _cosine_sim(query_vec, mem_vec)
-            if sim >= 0.65:
-                scored.append((sim, row["content"]))
-        scored.sort(reverse=True)
-        return [content for _, content in scored[:5]]
+            new_embedding = await asyncio.to_thread(_embed, row["content"])
+            await self.db.update_embedding(row["id"], new_embedding.tobytes())
+        with open(MARKER_FILE, "w") as f:
+            f.write(CURRENT_MODEL + "\n")
+        logger.info("Memory embeddings migrated to %s (%d memories)", CURRENT_MODEL, len(rows))
 
     async def extract(self, user_msg: str, assistant_msg: str, source: str = ""):
         conversation = f"Philipp: {user_msg}\n\nJarvis: {assistant_msg}"

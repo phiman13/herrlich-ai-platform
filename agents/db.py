@@ -114,6 +114,14 @@ class MemoryDB:
                 row = await cursor.fetchone()
         return row[0] if row else None
 
+    async def update_embedding(self, memory_id: int, embedding: bytes):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "UPDATE memories SET embedding = ? WHERE id = ?",
+                (embedding, memory_id),
+            )
+            await db.commit()
+
 
 class ConversationDB:
     def __init__(self, path: str = "/root/.jarvis/conversations.db"):
