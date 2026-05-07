@@ -137,7 +137,7 @@ class MemoryDB:
             )
             await db.commit()
 
-    async def load_since(self, days: int) -> list:
+    async def load_since(self, days: int) -> list[dict]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         async with aiosqlite.connect(self.path) as db:
             async with db.execute(
@@ -242,7 +242,8 @@ class ProactiveDB:
                 row = await cursor.fetchone()
         if row is None:
             return None
-        return datetime.fromisoformat(row[0])
+        dt = datetime.fromisoformat(row[0])
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
     async def mark_tasks_reminded(self, task_ids: list) -> None:
         now = datetime.now(timezone.utc).isoformat()
