@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 import pathlib
 
@@ -9,7 +8,7 @@ logger = logging.getLogger("jarvis.microsoft")
 
 TOKEN_FILE = "/root/.jarvis/microsoft_tokens.json"
 TOKEN_DIR = "/root/.jarvis"
-SCOPES = ["Mail.Read", "Mail.Send", "Tasks.ReadWrite", "Tasks.ReadWrite.Shared"]
+SCOPES = ["Mail.ReadWrite", "Mail.Send", "Tasks.ReadWrite", "Tasks.ReadWrite.Shared"]
 AUTHORITY = "https://login.microsoftonline.com/consumers"
 REDIRECT_URI = "https://herrlich.dev/oauth/microsoft/callback"
 
