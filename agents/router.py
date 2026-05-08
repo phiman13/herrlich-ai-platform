@@ -239,10 +239,11 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - list_name: string oder null (falls eine bestimmte Reminder-Liste genannt)
 
 12. "weather" — Wetterabfragen für die aktuelle Region (Tutzing / München).
-   Beispiele: "Wie wird das Wetter morgen?", "Wetter heute", "Wettervorhersage diese Woche", "Regnet es morgen?"
+   Beispiele: "Wie wird das Wetter morgen?", "Wetter heute", "Wettervorhersage diese Woche", "Regnet es morgen?", "Wie wird es heute Nachmittag?"
 
    Parameter:
    - period: "today" | "tomorrow" | "week"
+   - time_of_day: "morning" | "noon" | "afternoon" | "evening" | "night" | null (nur wenn explizit genannt)
 
 ## Output-Format
 

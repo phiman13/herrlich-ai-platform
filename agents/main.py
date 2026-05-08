@@ -696,12 +696,13 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     elif intent == "weather":
         period = params.get("period", "today")
+        time_of_day = params.get("time_of_day")
         period_label = {
             "today": "heute",
             "tomorrow": "morgen",
             "week": "diese Woche",
         }.get(period, period)
-        weather = await asyncio.to_thread(get_weather, period)
+        weather = await asyncio.to_thread(get_weather, period, time_of_day)
         await update.message.reply_text(
             f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
         )
