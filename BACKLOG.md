@@ -26,13 +26,6 @@ Letzter Stand: 08.05.2026
       Relevant sobald regelmäßig parallel auf Mac + VPS gearbeitet wird.
       Aufwand: 60–90 Min inkl. HMAC-Validierung.
 
-- [ ] **MS Graph Phase 4: Schreibender Mail-Zugriff**
-      Archivieren, Verschieben, Löschen, als gelesen markieren —
-      mit Bestätigungs-Prompts im Telegram-Flow. Aufwand: 90–120 Min.
-
-- [ ] **Wetter: Heimatort konfigurierbar per .env**
-      Aktuell hardcodiert auf Tutzing (lat/lon). Sollte via
-      `WEATHER_LAT`, `WEATHER_LON`, `WEATHER_LOCATION_NAME` konfigurierbar sein.
 
 ## P3 — Später
 
@@ -53,6 +46,8 @@ Letzter Stand: 08.05.2026
 ## Erledigt
 
 ### 08.05.2026
+- [x] MS Graph Phase 4: Schreibender Mail-Zugriff (mark_read/unread, archive, move, delete, reply, forward) mit Smart-Search + Confirm-Dialog
+- [x] Wetter: Heimatort konfigurierbar per .env (WEATHER_LAT, WEATHER_LON, WEATHER_LOCATION_NAME)
 - [x] Wetter: stündliche Vorhersage + time_of_day Parameter (heute Nachmittag etc.)
 - [x] Wetter: Ortseingabe + Geocoding via Open-Meteo (kostenfrei)
 - [x] Reminder-Write: auf MS To-Do umgestellt (iCloud CalDAV VTODO seit iOS 13 broken)
