@@ -1,5 +1,6 @@
 import httpx
 import logging
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -33,9 +34,9 @@ _WMO_CODES = {
 
 _WEEKDAYS_DE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
-_DEFAULT_LAT = 48.14
-_DEFAULT_LON = 11.58
-_DEFAULT_LOCATION = "Tutzing"
+_DEFAULT_LAT = float(os.environ.get("WEATHER_LAT", "48.14"))
+_DEFAULT_LON = float(os.environ.get("WEATHER_LON", "11.58"))
+_DEFAULT_LOCATION = os.environ.get("WEATHER_LOCATION_NAME", "Tutzing")
 
 _GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
