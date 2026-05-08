@@ -5,25 +5,14 @@ Letzter Stand: 08.05.2026
 
 ## P1 — Nächster Schritt
 
-- [ ] **Audit: Implementation gegen Best-Practice-Guides abgleichen**
-      Unser VPS-/Claude-Code-/Jarvis-Setup ist organisch gewachsen.
-      Vor weiteren Features einmal systematisch gegen externe
-      Best-Practice-Quellen prüfen, insbesondere:
+- [ ] **SQLite-Backup** — Täglicher Cronjob: `/root/.jarvis/*.db` + `microsoft_tokens.json`
+      nach `/root/backups/jarvis/` sichern, 7 Tage aufbewahren.
+      Aufwand: 20 Min.
 
-      Quellen:
-      - reddit.com/r/ClaudeCode "best way to actually use remote mode"
-      - claudefa.st "InfraOps VPS Guide" + "Permission Management"
-      - andrey-markin.com "Claude Code VPS Setup"
-
-      Erwartete Findings-Bereiche: Permission-Hygiene (claude-User vs root),
-      Secret-Management, Hook-Strategie, Container-Isolation, Backup-Strategie.
-      Output: Granulare neue Backlog-Items pro Finding.
-      Aufwand: 60–90 Min.
-
-- [ ] **Mail Smart-Search via LLM-Filter**
-      Multi-Kriterien-Suche scheitert an Graph-API-Limits. Lösung:
-      neuer `smart_search`-Modus, der 100–200 Mails holt und Claude
-      Haiku zur semantischen Filterung nutzt. Aufwand: 60–90 Min.
+- [ ] **Claude Code nicht als root** — `jarvis.service` läuft als `User=root`.
+      Migration: `useradd jarvis`, Ownership-Transfer `/root/agents/` →
+      `/home/jarvis/agents/`, `.env`-Pfad anpassen, Service-Unit updaten.
+      Aufwand: 60–90 Min. Risiko: Deployment-Pfade ändern sich.
 
 ## P2 — Wichtig, nicht dringend
 

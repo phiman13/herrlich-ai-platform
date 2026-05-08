@@ -1,4 +1,15 @@
 {
+  "cleanupPeriodDays": 7,
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/secrets/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(/root/.jarvis/microsoft_tokens.json)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {

@@ -12,19 +12,33 @@ except:
 BLOCKED_PATTERNS=(
     "rm -rf /"
     "rm -rf ~"
+    "rm -rf \*"
     "mkfs"
     "dd if="
     "> /etc"
     "chmod -R 777"
     "curl.*|.*bash"
+    "curl.*|.*sh"
     "wget.*|.*bash"
+    "wget.*|.*sh"
     "systemctl stop jarvis"
     "systemctl stop caddy"
+    "systemctl disable jarvis"
+    "cat .*\.env"
+    "cat /root/\.env"
+    "base64.*\.env"
+    "nc -e"
+    "ncat -e"
+    "> /etc/passwd"
+    "> /etc/shadow"
+    "crontab -r"
+    "ufw disable"
+    "ufw reset"
 )
 
 for pattern in "${BLOCKED_PATTERNS[@]}"; do
-    if echo "$COMMAND" | grep -qE "$pattern"; then
-        echo "BLOCKED: Gefaehrlicher Befehl: $pattern" >&2
+    if echo "$COMMAND" | grep -qiE "$pattern"; then
+        echo "BLOCKED: Gefaehrlicher Befehl erkannt: $pattern" >&2
         exit 1
     fi
 done
