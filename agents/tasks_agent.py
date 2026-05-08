@@ -91,6 +91,11 @@ def add_task(list_name: str, title: str, due_date: str | None = None) -> bool:
                 "dateTime": f"{due_date}T00:00:00.0000000",
                 "timeZone": "Europe/Berlin",
             }
+            body["isReminderOn"] = True
+            body["reminderDateTime"] = {
+                "dateTime": f"{due_date}T09:00:00.0000000",
+                "timeZone": "Europe/Berlin",
+            }
         resp = httpx.post(
             f"{_BASE}/lists/{list_id}/tasks",
             headers=_headers(),
@@ -182,6 +187,17 @@ def complete_task(list_name: str, task_title: str) -> bool:
         return False
 
 
+_SYSTEM_TASK_PREFIXES = (
+    "Der Ersteller dieser Liste",
+    "Wo sind meine Erinnerungen",
+    "Welcome to Microsoft To Do",
+)
+
+
+def _is_system_task(title: str) -> bool:
+    return any(title.startswith(p) for p in _SYSTEM_TASK_PREFIXES)
+
+
 def get_tasks_raw() -> list:
     """Return all open tasks from all lists as dicts with id, title, list_name, created_at."""
     try:
@@ -200,6 +216,8 @@ def get_tasks_raw() -> list:
             )
             resp.raise_for_status()
             for t in resp.json().get("value", []):
+                if _is_system_task(t["title"]):
+                    continue
                 all_tasks.append(
                     {
                         "id": f"todo_{t['id']}",
