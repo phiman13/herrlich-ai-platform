@@ -253,6 +253,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    Parameter:
    - title: string (Titel der Erinnerung, Pflichtfeld)
    - due_date: ISO-Datum (YYYY-MM-DD) oder null (falls kein Datum genannt)
+   - due_time: Uhrzeit im Format HH:MM oder null (falls keine Uhrzeit genannt)
    - list_name: string oder null (falls eine bestimmte Reminder-Liste genannt)
 
 12. "weather" — Wetterabfragen für die aktuelle Region (Tutzing / München).

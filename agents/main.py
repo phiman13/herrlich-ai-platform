@@ -738,6 +738,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
     elif intent == "reminder_write":
         title = params.get("title", "")
         due_date_str = params.get("due_date")
+        due_time_str = params.get("due_time")
         list_name = params.get("list_name") or os.environ.get(
             "REMINDER_TODO_LIST", "Tasks"
         )
@@ -745,9 +746,15 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             await update.message.reply_text("Kein Titel angegeben.")
             return
         try:
-            ok = await asyncio.to_thread(add_task, list_name, title, due_date_str)
+            ok = await asyncio.to_thread(
+                add_task, list_name, title, due_date_str, due_time_str
+            )
             if ok:
-                due_str = f" (fällig: {due_date_str})" if due_date_str else ""
+                due_str = (
+                    f" (fällig: {due_date_str}{' ' + due_time_str if due_time_str else ''})"
+                    if due_date_str
+                    else ""
+                )
                 await update.message.reply_text(
                     f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
                 )

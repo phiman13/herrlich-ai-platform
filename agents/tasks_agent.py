@@ -80,7 +80,9 @@ def get_tasks(list_name: str | None = None) -> str:
         return "Tasks nicht verfügbar."
 
 
-def add_task(list_name: str, title: str, due_date: str | None = None) -> bool:
+def add_task(
+    list_name: str, title: str, due_date: str | None = None, due_time: str | None = None
+) -> bool:
     try:
         list_id = _find_list_id(list_name)
         if not list_id:
@@ -91,9 +93,10 @@ def add_task(list_name: str, title: str, due_date: str | None = None) -> bool:
                 "dateTime": f"{due_date}T00:00:00.0000000",
                 "timeZone": "Europe/Berlin",
             }
+            reminder_time = due_time or "09:00"
             body["isReminderOn"] = True
             body["reminderDateTime"] = {
-                "dateTime": f"{due_date}T09:00:00.0000000",
+                "dateTime": f"{due_date}T{reminder_time}:00.0000000",
                 "timeZone": "Europe/Berlin",
             }
         resp = httpx.post(
