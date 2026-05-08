@@ -244,6 +244,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    Parameter:
    - period: "today" | "tomorrow" | "week"
    - time_of_day: "morning" | "noon" | "afternoon" | "evening" | "night" | null (nur wenn explizit genannt)
+   - location: string oder null (Stadtname, nur wenn explizit genannt — sonst null für Standardort Tutzing)
 
 ## Output-Format
 

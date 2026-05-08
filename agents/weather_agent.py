@@ -33,6 +33,34 @@ _WMO_CODES = {
 
 _WEEKDAYS_DE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
+_DEFAULT_LAT = 48.14
+_DEFAULT_LON = 11.58
+_DEFAULT_LOCATION = "Tutzing"
+
+_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+def _geocode(city: str) -> tuple[float, float, str]:
+    """Return (lat, lon, display_name). Falls back to default on error."""
+    try:
+        resp = httpx.get(
+            _GEOCODING_URL,
+            params={"name": city, "count": 1, "language": "de"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        if results:
+            r = results[0]
+            name = r.get("name", city)
+            country = r.get("country_code", "")
+            display = f"{name}, {country}" if country else name
+            return r["latitude"], r["longitude"], display
+    except Exception as e:
+        logger.warning("Geocoding fehlgeschlagen für %r: %s", city, e)
+    return _DEFAULT_LAT, _DEFAULT_LON, _DEFAULT_LOCATION
+
+
 # time_of_day → hour ranges to show
 _TIME_SLOTS = {
     "morning": [7, 9],
@@ -43,10 +71,9 @@ _TIME_SLOTS = {
 }
 _DEFAULT_SLOTS = [9, 12, 15, 18, 21]
 
-_URL = (
+_FORECAST_BASE = (
     "https://api.open-meteo.com/v1/forecast"
-    "?latitude=48.14&longitude=11.58"
-    "&current=temperature_2m,weathercode,precipitation"
+    "?current=temperature_2m,weathercode,precipitation"
     "&hourly=temperature_2m,weathercode,precipitation_probability"
     "&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum"
     "&forecast_days=7"
@@ -76,15 +103,28 @@ def _fmt_hourly(hourly: dict, date_prefix: str, hours: list[int]) -> list[str]:
     return lines
 
 
-def get_weather(period: str = "today", time_of_day: str | None = None) -> str:
+def get_weather(
+    period: str = "today",
+    time_of_day: str | None = None,
+    location: str | None = None,
+) -> str:
+    if location:
+        lat, lon, loc_name = _geocode(location)
+    else:
+        lat, lon, loc_name = _DEFAULT_LAT, _DEFAULT_LON, _DEFAULT_LOCATION
+
+    url = f"{_FORECAST_BASE}&latitude={lat}&longitude={lon}"
+
     for attempt in range(2):
         try:
-            resp = httpx.get(_URL, timeout=15)
+            resp = httpx.get(url, timeout=15)
             resp.raise_for_status()
             data = resp.json()
 
             now = datetime.now(_BERLIN)
             today_str = now.strftime("%Y-%m-%d")
+
+            loc_prefix = f"📍 {loc_name}\n" if location else ""
 
             if period == "today":
                 cur = data.get("current", {})
@@ -93,7 +133,9 @@ def get_weather(period: str = "today", time_of_day: str | None = None) -> str:
                 cur_precip = cur.get("precipitation", 0.0)
                 cur_desc, cur_icon = _WMO_CODES.get(cur_code, ("unbekannt", "🌡️"))
                 rain_note = f", {cur_precip:.1f} mm" if cur_precip > 0 else ""
-                header = f"Jetzt: {cur_icon} {cur_temp}°C, {cur_desc}{rain_note}"
+                header = (
+                    f"{loc_prefix}Jetzt: {cur_icon} {cur_temp}°C, {cur_desc}{rain_note}"
+                )
 
                 hours = _TIME_SLOTS.get(time_of_day or "", _DEFAULT_SLOTS)
                 # only future hours
@@ -119,7 +161,7 @@ def get_weather(period: str = "today", time_of_day: str | None = None) -> str:
                 idx = 1
                 desc, icon = _WMO_CODES.get(int(codes[idx]), ("unbekannt", "🌡️"))
                 rain_note = f", {precips[idx]:.1f} mm Regen" if precips[idx] > 0 else ""
-                header = f"{icon} {max_temps[idx]:.0f}°C / {min_temps[idx]:.0f}°C, {desc}{rain_note}"
+                header = f"{loc_prefix}{icon} {max_temps[idx]:.0f}°C / {min_temps[idx]:.0f}°C, {desc}{rain_note}"
 
                 hours = _TIME_SLOTS.get(time_of_day or "", _DEFAULT_SLOTS)
                 tomorrow_str = dates[1] if len(dates) > 1 else ""
