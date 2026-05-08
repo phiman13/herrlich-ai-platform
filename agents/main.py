@@ -1097,6 +1097,88 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _pending_mail_ops.pop(chat_id, None)
         await query.edit_message_text("❌ Entwurf verworfen.")
 
+    elif data == "mail:action:confirm":
+        chat_id = query.message.chat_id
+        op = _pending_mail_ops.pop(chat_id, None)
+        if op is None:
+            await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
+            return
+        from mail_agent import MailAgent
+
+        agent = MailAgent()
+        op_type = op["type"]
+        mail_id = op["mail_id"]
+        try:
+            if op_type == "archive":
+                ok = await asyncio.to_thread(agent.archive, mail_id)
+                msg = "✅ Mail archiviert." if ok else "❌ Archivieren fehlgeschlagen."
+            elif op_type == "delete":
+                ok = await asyncio.to_thread(agent.delete, mail_id)
+                msg = "✅ Mail gelöscht." if ok else "❌ Löschen fehlgeschlagen."
+            elif op_type == "move":
+                folder_name = op.get("destination_folder", "")
+                folder = await asyncio.to_thread(agent.find_folder_by_name, folder_name)
+                if folder is None:
+                    await query.edit_message_text(
+                        f"❌ Ordner '{folder_name}' nicht gefunden."
+                    )
+                    return
+                ok = await asyncio.to_thread(agent.move, mail_id, folder.id)
+                msg = (
+                    f"✅ Mail verschoben nach '{folder_name}'."
+                    if ok
+                    else "❌ Verschieben fehlgeschlagen."
+                )
+            elif op_type == "reply":
+                comment = op.get("reply_text", "")
+                ok = await asyncio.to_thread(agent.reply, mail_id, comment)
+                msg = "✅ Antwort gesendet." if ok else "❌ Antwort fehlgeschlagen."
+            elif op_type == "forward":
+                to_raw = op.get("forward_to", "")
+                to_emails = [e.strip() for e in to_raw.split(",") if "@" in e]
+                comment = op.get("forward_text", "")
+                ok = await asyncio.to_thread(agent.forward, mail_id, to_emails, comment)
+                msg = (
+                    f"✅ Mail weitergeleitet an {to_raw}."
+                    if ok
+                    else "❌ Weiterleiten fehlgeschlagen."
+                )
+            else:
+                msg = "❌ Unbekannte Aktion."
+        except Exception as e:
+            logger.exception("mail:action:confirm fehlgeschlagen")
+            msg = f"❌ Fehler: {e}"
+        await query.edit_message_text(msg)
+
+    elif data == "mail:action:cancel":
+        chat_id = query.message.chat_id
+        _pending_mail_ops.pop(chat_id, None)
+        _last_mail_search.pop(chat_id, None)
+        await query.edit_message_text("❌ Abgebrochen.")
+
+    elif data.startswith("mail:select:"):
+        chat_id = query.message.chat_id
+        entry = _last_mail_search.get(chat_id)
+        if entry is None or (time.time() - entry["timestamp"]) > 180:
+            _last_mail_search.pop(chat_id, None)
+            await query.edit_message_text("⏱️ Auswahl abgelaufen — bitte nochmal.")
+            return
+        try:
+            idx = int(data.split(":")[-1])
+            mails = entry["mails"]
+            if idx >= len(mails):
+                await query.edit_message_text("❌ Ungültige Auswahl.")
+                return
+        except (ValueError, IndexError):
+            await query.edit_message_text("❌ Ungültige Auswahl.")
+            return
+        mail = mails[idx]
+        mode = entry["mode"]
+        params = entry["params"]
+        _last_mail_search.pop(chat_id, None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _show_mail_action_confirm(chat_id, mail, mode, params)
+
 
 @app.on_event("startup")
 async def startup():
