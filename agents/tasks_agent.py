@@ -69,18 +69,12 @@ def get_tasks(list_name: str | None = None) -> str:
             return "\n".join(lines)
         else:
             lists = _get_lists()
-            lines = []
-            for lst in lists[:5]:
-                resp = httpx.get(
-                    f"{_BASE}/lists/{lst['id']}/tasks?$filter=status ne 'completed'&$top=5",
-                    headers=_headers(),
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                tasks = resp.json().get("value", [])
-                if tasks:
-                    lines.append(f"• {lst['displayName']}: {len(tasks)} offen")
-            return "\n".join(lines) if lines else "Keine offenen Tasks."
+            if not lists:
+                return "Keine To-Do-Listen gefunden."
+            lines = ["📋 Deine To-Do-Listen:\n"]
+            for lst in lists:
+                lines.append(f"• {lst['displayName']}")
+            return "\n".join(lines)
     except Exception as e:
         logger.warning(f"Tasks nicht verfügbar: {e}")
         return "Tasks nicht verfügbar."
