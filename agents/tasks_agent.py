@@ -80,15 +80,21 @@ def get_tasks(list_name: str | None = None) -> str:
         return "Tasks nicht verfügbar."
 
 
-def add_task(list_name: str, title: str) -> bool:
+def add_task(list_name: str, title: str, due_date: str | None = None) -> bool:
     try:
         list_id = _find_list_id(list_name)
         if not list_id:
             return False
+        body: dict = {"title": title}
+        if due_date:
+            body["dueDateTime"] = {
+                "dateTime": f"{due_date}T00:00:00.0000000",
+                "timeZone": "Europe/Berlin",
+            }
         resp = httpx.post(
             f"{_BASE}/lists/{list_id}/tasks",
             headers=_headers(),
-            json={"title": title},
+            json=body,
             timeout=10,
         )
         resp.raise_for_status()

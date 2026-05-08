@@ -568,8 +568,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             await update.message.reply_text("Kein Titel angegeben.")
             return
         try:
-            task_title = f"{title} (fällig: {due_date_str})" if due_date_str else title
-            ok = await asyncio.to_thread(add_task, list_name, task_title)
+            ok = await asyncio.to_thread(add_task, list_name, title, due_date_str)
             if ok:
                 due_str = f" (fällig: {due_date_str})" if due_date_str else ""
                 await update.message.reply_text(
