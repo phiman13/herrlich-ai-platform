@@ -82,6 +82,15 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 
 _pending_mail_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
+_WRITE_MODES = {
+    "mark_read",
+    "mark_unread",
+    "archive",
+    "move",
+    "delete",
+    "reply",
+    "forward",
+}
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _conversation_db = None  # initialized in startup()
@@ -257,15 +266,6 @@ async def handle_mail(chat_id, text, params):
         )
         return
 
-    _WRITE_MODES = {
-        "mark_read",
-        "mark_unread",
-        "archive",
-        "move",
-        "delete",
-        "reply",
-        "forward",
-    }
     if mode in _WRITE_MODES:
         await _handle_mail_write(chat_id, mode, params)
         return
