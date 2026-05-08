@@ -19,9 +19,13 @@ def _ok(status=200):
 
 
 def _err(status=403):
+    def raise_error():
+        raise _requests.HTTPError(str(status))
+
     r = MagicMock()
     r.status_code = status
-    r.raise_for_status = MagicMock(side_effect=_requests.HTTPError(str(status)))
+    r.text = "Error"
+    r.raise_for_status = MagicMock(side_effect=raise_error)
     return r
 
 

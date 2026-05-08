@@ -238,7 +238,6 @@ class MailAgent:
         if r.status_code not in (200, 204):
             self.logger.error("Graph PATCH error: %s %s", r.status_code, r.text[:200])
             r.raise_for_status()
-            raise Exception(f"Graph API error: {r.status_code}")
 
     def _post_action(self, path: str, json_data: dict | None = None) -> None:
         url = f"{GRAPH_BASE}{path}"
