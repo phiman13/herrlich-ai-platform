@@ -283,6 +283,57 @@ class MailAgent:
             self.logger.error("mark_read fehlgeschlagen: %s", e)
             return False
 
+    def archive(self, mail_id: str) -> bool:
+        try:
+            self._post_action(f"/me/messages/{mail_id}/archive")
+            return True
+        except Exception as e:
+            self.logger.error("archive fehlgeschlagen: %s", e)
+            return False
+
+    def move(self, mail_id: str, destination_folder_id: str) -> bool:
+        try:
+            self._post_action(
+                f"/me/messages/{mail_id}/move",
+                {"destinationId": destination_folder_id},
+            )
+            return True
+        except Exception as e:
+            self.logger.error("move fehlgeschlagen: %s", e)
+            return False
+
+    def delete(self, mail_id: str) -> bool:
+        try:
+            self._delete_req(f"/me/messages/{mail_id}")
+            return True
+        except Exception as e:
+            self.logger.error("delete fehlgeschlagen: %s", e)
+            return False
+
+    def reply(self, mail_id: str, comment: str) -> bool:
+        try:
+            self._post_action(f"/me/messages/{mail_id}/reply", {"comment": comment})
+            return True
+        except Exception as e:
+            self.logger.error("reply fehlgeschlagen: %s", e)
+            return False
+
+    def forward(self, mail_id: str, to_emails: list[str], comment: str = "") -> bool:
+        try:
+            self._post_action(
+                f"/me/messages/{mail_id}/forward",
+                {
+                    "toRecipients": [
+                        {"emailAddress": {"address": e}} for e in to_emails
+                    ],
+                    "comment": comment,
+                },
+            )
+            return True
+        except Exception as e:
+            self.logger.error("forward fehlgeschlagen: %s", e)
+            return False
+
     def get_recent_mails(self, n: int = 150, since: datetime | None = None) -> list:
         params = {
             "$top": n,
