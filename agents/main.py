@@ -561,18 +561,24 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
     elif intent == "reminder_write":
         title = params.get("title", "")
         due_date_str = params.get("due_date")
-        list_name = params.get("list_name")
+        list_name = params.get("list_name") or os.environ.get(
+            "REMINDER_TODO_LIST", "Aufgaben"
+        )
         if not title:
             await update.message.reply_text("Kein Titel angegeben.")
             return
         try:
-            from ntfy_agent import send_reminder
-
-            await asyncio.to_thread(send_reminder, title, due_date_str, list_name)
-            due_str = f" (fällig: {due_date_str})" if due_date_str else ""
-            await update.message.reply_text(
-                f"✅ Erinnerung '{title}'{due_str} erstellt."
-            )
+            task_title = f"{title} (fällig: {due_date_str})" if due_date_str else title
+            ok = await asyncio.to_thread(add_task, list_name, task_title)
+            if ok:
+                due_str = f" (fällig: {due_date_str})" if due_date_str else ""
+                await update.message.reply_text(
+                    f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ Liste '{list_name}' nicht gefunden. Verfügbare Listen mit 'Zeig mir alle To-Do-Listen'."
+                )
         except Exception as e:
             logger.exception("reminder_write fehlgeschlagen")
             await update.message.reply_text(
