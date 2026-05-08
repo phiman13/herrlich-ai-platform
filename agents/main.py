@@ -79,7 +79,8 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
         await asyncio.sleep(4)
 
 
-_pending_mail_drafts: dict[int, dict] = {}
+_pending_mail_ops: dict[int, dict] = {}
+_last_mail_search: dict[int, dict] = {}
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _conversation_db = None  # initialized in startup()
@@ -230,7 +231,8 @@ async def handle_mail(chat_id, text, params):
             )
             return
 
-        _pending_mail_drafts[chat_id] = {
+        _pending_mail_ops[chat_id] = {
+            "type": "compose",
             "to_email": to_email,
             "subject": subject,
             "body": body,
@@ -887,7 +889,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:send":
         chat_id = query.message.chat_id
-        draft = _pending_mail_drafts.pop(chat_id, None)
+        draft = _pending_mail_ops.pop(chat_id, None)
         if draft is None:
             await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
             return
@@ -907,7 +909,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:cancel":
         chat_id = query.message.chat_id
-        _pending_mail_drafts.pop(chat_id, None)
+        _pending_mail_ops.pop(chat_id, None)
         await query.edit_message_text("❌ Entwurf verworfen.")
 
 
