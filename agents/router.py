@@ -318,11 +318,16 @@ def _call_claude_sync(system: str, user: str) -> str:
     return response.content[0].text
 
 
-async def route_with_llm(text: str) -> dict:
+async def route_with_llm(text: str, prev_text: str | None = None) -> dict:
     logger.info(f"Router input: {text!r}")
     system = await _build_system_prompt()
+    user_msg = (
+        f"[Kontext — vorherige Nachricht: {prev_text}]\n\nAktuelle Nachricht: {text}"
+        if prev_text
+        else text
+    )
     try:
-        raw = await asyncio.to_thread(_call_claude_sync, system, text)
+        raw = await asyncio.to_thread(_call_claude_sync, system, user_msg)
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
