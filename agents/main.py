@@ -82,7 +82,7 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 
 _pending_mail_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
-_last_user_text: dict[int, str] = {}
+_recent_user_texts: dict[int, list[str]] = {}
 _WRITE_MODES = {
     "mark_read",
     "mark_unread",
@@ -619,9 +619,10 @@ async def start(update, context):
 
 
 async def _process_text(text: str, chat_id: int, update: Update) -> None:
-    prev_text = _last_user_text.get(chat_id)
-    _last_user_text[chat_id] = text
-    routing = await route_with_llm(text, prev_text=prev_text)
+    history = _recent_user_texts.get(chat_id, [])
+    recent = history[-3:] if len(history) >= 3 else history
+    _recent_user_texts[chat_id] = (history + [text])[-10:]
+    routing = await route_with_llm(text, prev_texts=recent)
     intent = routing["intent"]
     params = routing["params"]
 
