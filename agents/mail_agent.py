@@ -285,7 +285,9 @@ class MailAgent:
 
     def archive(self, mail_id: str) -> bool:
         try:
-            self._post_action(f"/me/messages/{mail_id}/archive")
+            self._post_action(
+                f"/me/messages/{mail_id}/move", {"destinationId": "archive"}
+            )
             return True
         except Exception as e:
             self.logger.error("archive fehlgeschlagen: %s", e)

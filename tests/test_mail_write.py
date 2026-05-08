@@ -111,7 +111,7 @@ class TestMarkRead:
 
 
 class TestArchive:
-    def test_posts_to_archive_endpoint(self, agent):
+    def test_posts_to_move_endpoint_with_archive_destination(self, agent):
         with (
             patch("agents.mail_agent.get_access_token", return_value="tok"),
             patch("requests.post", return_value=_ok(200)) as mock_post,
@@ -119,8 +119,10 @@ class TestArchive:
             result = agent.archive("mail456")
         assert result is True
         url = mock_post.call_args[0][0]
+        body = mock_post.call_args[1]["json"]
         assert "mail456" in url
-        assert url.endswith("/archive")
+        assert url.endswith("/move")
+        assert body == {"destinationId": "archive"}
 
     def test_returns_false_on_error(self, agent):
         with (
