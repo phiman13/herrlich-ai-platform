@@ -562,7 +562,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         title = params.get("title", "")
         due_date_str = params.get("due_date")
         list_name = params.get("list_name") or os.environ.get(
-            "REMINDER_TODO_LIST", "Aufgaben"
+            "REMINDER_TODO_LIST", "Tasks"
         )
         if not title:
             await update.message.reply_text("Kein Titel angegeben.")
