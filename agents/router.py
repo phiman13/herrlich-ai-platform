@@ -156,7 +156,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
    Parameter: keine
 
-5. "mail" — Anfragen zu Outlook-Mails (Posteingang, Ordner, Suche). NUR LESEN, keine Aktionen wie verschieben oder löschen. Außer mode=compose.
+5. "mail" — Anfragen zu Outlook-Mails: lesen, suchen und schreiben.
    Verfügbare Ordner: {MAIL_FOLDERS}
 
    Beispiele:
@@ -167,9 +167,16 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - "Was steht im Ordner 'Steuern'?" → quick_scan mit folder_name
    - "Welche Ordner gibt es?" → list_folders
    - "Schreibe eine Mail an anna@beispiel.de ..." → compose
+   - "Markiere die Mail von Sparkasse als gelesen" → mark_read
+   - "Markiere als ungelesen" → mark_unread
+   - "Archiviere die letzte Mail von Anna" → archive
+   - "Verschiebe die Mail über Rechnung in den Ordner Steuern" → move
+   - "Lösche die Mail von Newsletter XY" → delete
+   - "Antworte auf die Mail von Anna mit: Passt mir gut" → reply
+   - "Leite die Rechnung von Müller weiter an chef@firma.de" → forward
 
    Parameter:
-   - mode: "quick_scan" | "unread" | "search" | "list_folders" | "compose"
+   - mode: "quick_scan" | "unread" | "search" | "list_folders" | "compose" | "mark_read" | "mark_unread" | "archive" | "move" | "delete" | "reply" | "forward"
    - count: integer oder null (Anzahl Mails, default je nach mode)
    - sender: string oder null (Filter nach Absender, falls genannt)
    - subject_contains: string oder null (Filter nach Betreff)
@@ -178,6 +185,11 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - to_email: string oder null (Empfänger-Adresse, nur bei mode=compose)
    - subject: string oder null (Betreff, nur bei mode=compose)
    - body: string oder null (Mail-Text auf Deutsch, nur bei mode=compose)
+   - mail_query: string oder null (Freitext-Beschreibung der Zielmail, z.B. "letzte Mail von Sparkasse" — MUSS gesetzt sein bei mode=mark_read/unread/archive/move/delete/reply/forward)
+   - reply_text: string oder null (Antworttext, nur bei mode=reply)
+   - forward_to: string oder null (Empfänger-E-Mail, nur bei mode=forward)
+   - forward_text: string oder null (optionaler Begleittext, nur bei mode=forward)
+   - destination_folder: string oder null (Zielordner-Name, nur bei mode=move)
 
    Mode-Bestimmung:
    - "Posteingang" / "Was Neues" / "Aktuelle Mails" → quick_scan
@@ -186,6 +198,11 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - "Welche Ordner" / "Liste meiner Ordner" → list_folders
    - Ordnerangaben wie "im Ordner X" setzen folder_name, mode bleibt je nach Hauptfrage
    - "Schreibe/Sende eine Mail an ..." → compose (extrahiere to_email, subject, body aus dem Text)
+   - "Als gelesen/ungelesen markieren" → mark_read/mark_unread (mail_query = Beschreibung der Zielmail)
+   - "Archivieren / Verschieben / Löschen" → archive/move/delete (mail_query = Beschreibung der Zielmail)
+   - "Antworte auf ... mit ..." → reply (mail_query = Zielmail-Beschreibung, reply_text = Antworttext)
+   - "Leite ... weiter an ..." → forward (mail_query = Zielmail-Beschreibung, forward_to = Empfänger-E-Mail)
+   - Bei Write-Modes: mail_query MUSS gesetzt sein — alles was die Zielmail identifiziert (Absender, Betreff, Zeit)
 
 6. "personal" — Allgemeine Fragen, Smalltalk, alles andere.
    Beispiele: "Wie geht's dir?", "Erklär mir Photosynthese", "Was hältst du von..."

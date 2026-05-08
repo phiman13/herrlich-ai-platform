@@ -232,6 +232,108 @@ class MailAgent:
             self.logger.error("send_mail fehlgeschlagen: %s", e)
             return False
 
+    def _patch(self, path: str, json_data: dict) -> None:
+        url = f"{GRAPH_BASE}{path}"
+        r = requests.patch(url, headers=self._get_headers(), json=json_data, timeout=15)
+        if r.status_code not in (200, 204):
+            self.logger.error("Graph PATCH error: %s %s", r.status_code, r.text[:200])
+            r.raise_for_status()
+
+    def _post_action(self, path: str, json_data: dict | None = None) -> None:
+        url = f"{GRAPH_BASE}{path}"
+        r = requests.post(
+            url, headers=self._get_headers(), json=json_data or {}, timeout=15
+        )
+        if r.status_code not in (200, 202, 204):
+            self.logger.error("Graph POST error: %s %s", r.status_code, r.text[:200])
+            r.raise_for_status()
+
+    def _delete_req(self, path: str) -> None:
+        url = f"{GRAPH_BASE}{path}"
+        r = requests.delete(url, headers=self._get_headers(), timeout=15)
+        if r.status_code not in (200, 204):
+            self.logger.error("Graph DELETE error: %s %s", r.status_code, r.text[:200])
+            r.raise_for_status()
+
+    def get_mail_body(self, mail_id: str) -> dict:
+        import re as _re
+
+        data = self._get(
+            f"/me/messages/{mail_id}",
+            params={"$select": "id,subject,from,receivedDateTime,body"},
+        )
+        body_content = data.get("body", {}).get("content", "")
+        body_text = _re.sub(r"<[^>]+>", " ", body_content)
+        body_text = _re.sub(r"\s+", " ", body_text).strip()[:500]
+        sender = data.get("from", {}).get("emailAddress", {})
+        return {
+            "id": data["id"],
+            "subject": data.get("subject", "(kein Betreff)"),
+            "sender_name": sender.get("name", ""),
+            "sender_email": sender.get("address", ""),
+            "received": data.get("receivedDateTime", ""),
+            "body_text": body_text,
+        }
+
+    def mark_read(self, mail_id: str, is_read: bool = True) -> bool:
+        try:
+            self._patch(f"/me/messages/{mail_id}", {"isRead": is_read})
+            return True
+        except Exception as e:
+            self.logger.error("mark_read fehlgeschlagen: %s", e)
+            return False
+
+    def archive(self, mail_id: str) -> bool:
+        try:
+            self._post_action(f"/me/messages/{mail_id}/archive")
+            return True
+        except Exception as e:
+            self.logger.error("archive fehlgeschlagen: %s", e)
+            return False
+
+    def move(self, mail_id: str, destination_folder_id: str) -> bool:
+        try:
+            self._post_action(
+                f"/me/messages/{mail_id}/move",
+                {"destinationId": destination_folder_id},
+            )
+            return True
+        except Exception as e:
+            self.logger.error("move fehlgeschlagen: %s", e)
+            return False
+
+    def delete(self, mail_id: str) -> bool:
+        try:
+            self._delete_req(f"/me/messages/{mail_id}")
+            return True
+        except Exception as e:
+            self.logger.error("delete fehlgeschlagen: %s", e)
+            return False
+
+    def reply(self, mail_id: str, comment: str) -> bool:
+        try:
+            self._post_action(f"/me/messages/{mail_id}/reply", {"comment": comment})
+            return True
+        except Exception as e:
+            self.logger.error("reply fehlgeschlagen: %s", e)
+            return False
+
+    def forward(self, mail_id: str, to_emails: list[str], comment: str = "") -> bool:
+        try:
+            self._post_action(
+                f"/me/messages/{mail_id}/forward",
+                {
+                    "toRecipients": [
+                        {"emailAddress": {"address": e}} for e in to_emails
+                    ],
+                    "comment": comment,
+                },
+            )
+            return True
+        except Exception as e:
+            self.logger.error("forward fehlgeschlagen: %s", e)
+            return False
+
     def get_recent_mails(self, n: int = 150, since: datetime | None = None) -> list:
         params = {
             "$top": n,

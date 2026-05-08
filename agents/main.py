@@ -3,6 +3,7 @@ import re
 import sys
 import logging
 import asyncio
+import time
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, PlainTextResponse
@@ -79,7 +80,17 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
         await asyncio.sleep(4)
 
 
-_pending_mail_drafts: dict[int, dict] = {}
+_pending_mail_ops: dict[int, dict] = {}
+_last_mail_search: dict[int, dict] = {}
+_WRITE_MODES = {
+    "mark_read",
+    "mark_unread",
+    "archive",
+    "move",
+    "delete",
+    "reply",
+    "forward",
+}
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _conversation_db = None  # initialized in startup()
@@ -230,7 +241,8 @@ async def handle_mail(chat_id, text, params):
             )
             return
 
-        _pending_mail_drafts[chat_id] = {
+        _pending_mail_ops[chat_id] = {
+            "type": "compose",
             "to_email": to_email,
             "subject": subject,
             "body": body,
@@ -252,6 +264,10 @@ async def handle_mail(chat_id, text, params):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        return
+
+    if mode in _WRITE_MODES:
+        await _handle_mail_write(chat_id, mode, params)
         return
 
     agent = MailAgent()
@@ -307,6 +323,177 @@ async def handle_mail(chat_id, text, params):
         return
 
     await bot.send_message(chat_id=chat_id, text=response, parse_mode="Markdown")
+
+
+async def _handle_mail_write(chat_id: int, mode: str, params: dict) -> None:
+    bot = Bot(token=TELEGRAM_TOKEN)
+    from mail_agent import MailAgent
+
+    mail_query = (
+        params.get("mail_query")
+        or params.get("sender")
+        or params.get("subject_contains")
+        or ""
+    )
+    if not mail_query:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Welche Mail meinst du? Bitte beschreibe sie genauer (z.B. 'letzte Mail von X').",
+        )
+        return
+
+    agent = MailAgent()
+    try:
+        mails = await asyncio.to_thread(agent.smart_search, mail_query, 50)
+    except Exception as e:
+        logger.exception("_handle_mail_write: smart_search fehlgeschlagen")
+        await bot.send_message(chat_id=chat_id, text=f"❌ Suche fehlgeschlagen: {e}")
+        return
+
+    if not mails:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"Keine passende Mail gefunden für '{mail_query}'.",
+        )
+        return
+
+    if len(mails) > 5:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Zu viele Treffer — bitte genauer beschreiben (Absender, Betreff oder Datum nennen).",
+        )
+        return
+
+    if len(mails) == 1:
+        await _show_mail_action_confirm(chat_id, mails[0], mode, params)
+        return
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    lines = ["🔍 *Welche Mail?*\n"]
+    keyboard = []
+    for i, m in enumerate(mails):
+        date_str = m.received.astimezone(BERLIN).strftime("%d.%m %H:%M")
+        sender = (m.sender_name or m.sender_email or "?")[:30]
+        subject = m.subject[:60]
+        lines.append(f"{i + 1}. *{sender}* — {date_str}\n   _{subject}_")
+        keyboard.append(
+            [InlineKeyboardButton(str(i + 1), callback_data=f"mail:select:{i}")]
+        )
+
+    _last_mail_search[chat_id] = {
+        "mails": mails,
+        "mode": mode,
+        "params": params,
+        "timestamp": time.time(),
+    }
+    await bot.send_message(
+        chat_id=chat_id,
+        text="\n\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def _show_mail_action_confirm(
+    chat_id: int, mail, mode: str, params: dict
+) -> None:
+    bot = Bot(token=TELEGRAM_TOKEN)
+    from mail_agent import MailAgent
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    date_str = mail.received.astimezone(BERLIN).strftime("%d.%m.%Y %H:%M")
+    sender = mail.sender_name or mail.sender_email or "?"
+    subject_clean = mail.subject.replace("*", "").replace("_", "")[:80]
+
+    if mode == "mark_read":
+        agent = MailAgent()
+        ok = await asyncio.to_thread(agent.mark_read, mail.id, True)
+        await bot.send_message(
+            chat_id=chat_id,
+            text="✅ Als gelesen markiert." if ok else "❌ Fehlgeschlagen.",
+        )
+        return
+
+    if mode == "mark_unread":
+        agent = MailAgent()
+        ok = await asyncio.to_thread(agent.mark_read, mail.id, False)
+        await bot.send_message(
+            chat_id=chat_id,
+            text="✅ Als ungelesen markiert." if ok else "❌ Fehlgeschlagen.",
+        )
+        return
+
+    action_labels = {
+        "archive": "📦 Archivieren?",
+        "move": "📁 Verschieben?",
+        "delete": "🗑️ Löschen?",
+        "reply": "↩️ Antworten?",
+        "forward": "↪️ Weiterleiten?",
+    }
+    confirm_labels = {
+        "archive": "✅ Archivieren",
+        "move": "✅ Verschieben",
+        "delete": "✅ Löschen",
+        "reply": "✅ Senden",
+        "forward": "✅ Senden",
+    }
+    title = action_labels.get(mode, "❓ Ausführen?")
+    confirm_label = confirm_labels.get(mode, "✅ Ja")
+
+    body_preview = ""
+    if mode in ("reply", "forward"):
+        try:
+            agent = MailAgent()
+            full = await asyncio.to_thread(agent.get_mail_body, mail.id)
+            if full.get("body_text"):
+                body_preview = f"\n\n📄 _{full['body_text'][:200]}_"
+        except Exception:
+            pass
+
+    if mode == "reply":
+        reply_text = params.get("reply_text", "")
+        text = (
+            f"↩️ *Antwort auf:*\nVon: {sender}\nBetreff: {subject_clean}\nDatum: {date_str}"
+            f"{body_preview}\n\n*Deine Antwort:*\n_{reply_text}_"
+        )
+    elif mode == "forward":
+        forward_to = params.get("forward_to", "")
+        forward_text = params.get("forward_text", "")
+        text = (
+            f"↪️ *Weiterleiten an:* {forward_to}\nBetreff: {subject_clean}\nVon: {sender}"
+            f"{body_preview}" + (f"\n\n_{forward_text}_" if forward_text else "")
+        )
+    elif mode == "move":
+        dest = params.get("destination_folder", "?")
+        text = f"📁 *Verschieben nach '{dest}'?*\n\nVon: {sender}\nBetreff: {subject_clean}\nDatum: {date_str}"
+    else:
+        text = f"{title}\n\nVon: {sender}\nBetreff: {subject_clean}\nDatum: {date_str}"
+
+    _pending_mail_ops[chat_id] = {
+        "type": mode,
+        "mail_id": mail.id,
+        "subject": mail.subject,
+        "sender": sender,
+        **{
+            k: params[k]
+            for k in ("reply_text", "forward_to", "forward_text", "destination_folder")
+            if k in params
+        },
+    }
+
+    keyboard = [
+        [
+            InlineKeyboardButton(confirm_label, callback_data="mail:action:confirm"),
+            InlineKeyboardButton("❌ Abbrechen", callback_data="mail:action:cancel"),
+        ]
+    ]
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def handle_calendar(
@@ -887,7 +1074,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:send":
         chat_id = query.message.chat_id
-        draft = _pending_mail_drafts.pop(chat_id, None)
+        draft = _pending_mail_ops.pop(chat_id, None)
         if draft is None:
             await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
             return
@@ -907,8 +1094,90 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:cancel":
         chat_id = query.message.chat_id
-        _pending_mail_drafts.pop(chat_id, None)
+        _pending_mail_ops.pop(chat_id, None)
         await query.edit_message_text("❌ Entwurf verworfen.")
+
+    elif data == "mail:action:confirm":
+        chat_id = query.message.chat_id
+        op = _pending_mail_ops.pop(chat_id, None)
+        if op is None:
+            await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
+            return
+        from mail_agent import MailAgent
+
+        agent = MailAgent()
+        op_type = op["type"]
+        mail_id = op["mail_id"]
+        try:
+            if op_type == "archive":
+                ok = await asyncio.to_thread(agent.archive, mail_id)
+                msg = "✅ Mail archiviert." if ok else "❌ Archivieren fehlgeschlagen."
+            elif op_type == "delete":
+                ok = await asyncio.to_thread(agent.delete, mail_id)
+                msg = "✅ Mail gelöscht." if ok else "❌ Löschen fehlgeschlagen."
+            elif op_type == "move":
+                folder_name = op.get("destination_folder", "")
+                folder = await asyncio.to_thread(agent.find_folder_by_name, folder_name)
+                if folder is None:
+                    await query.edit_message_text(
+                        f"❌ Ordner '{folder_name}' nicht gefunden."
+                    )
+                    return
+                ok = await asyncio.to_thread(agent.move, mail_id, folder.id)
+                msg = (
+                    f"✅ Mail verschoben nach '{folder_name}'."
+                    if ok
+                    else "❌ Verschieben fehlgeschlagen."
+                )
+            elif op_type == "reply":
+                comment = op.get("reply_text", "")
+                ok = await asyncio.to_thread(agent.reply, mail_id, comment)
+                msg = "✅ Antwort gesendet." if ok else "❌ Antwort fehlgeschlagen."
+            elif op_type == "forward":
+                to_raw = op.get("forward_to", "")
+                to_emails = [e.strip() for e in to_raw.split(",") if "@" in e]
+                comment = op.get("forward_text", "")
+                ok = await asyncio.to_thread(agent.forward, mail_id, to_emails, comment)
+                msg = (
+                    f"✅ Mail weitergeleitet an {to_raw}."
+                    if ok
+                    else "❌ Weiterleiten fehlgeschlagen."
+                )
+            else:
+                msg = "❌ Unbekannte Aktion."
+        except Exception as e:
+            logger.exception("mail:action:confirm fehlgeschlagen")
+            msg = f"❌ Fehler: {e}"
+        await query.edit_message_text(msg)
+
+    elif data == "mail:action:cancel":
+        chat_id = query.message.chat_id
+        _pending_mail_ops.pop(chat_id, None)
+        _last_mail_search.pop(chat_id, None)
+        await query.edit_message_text("❌ Abgebrochen.")
+
+    elif data.startswith("mail:select:"):
+        chat_id = query.message.chat_id
+        entry = _last_mail_search.get(chat_id)
+        if entry is None or (time.time() - entry["timestamp"]) > 180:
+            _last_mail_search.pop(chat_id, None)
+            await query.edit_message_text("⏱️ Auswahl abgelaufen — bitte nochmal.")
+            return
+        try:
+            idx = int(data.split(":")[-1])
+            mails = entry["mails"]
+            if idx >= len(mails):
+                await query.edit_message_text("❌ Ungültige Auswahl.")
+                return
+        except (ValueError, IndexError):
+            await query.edit_message_text("❌ Ungültige Auswahl.")
+            return
+        mail = mails[idx]
+        mode = entry["mode"]
+        params = entry["params"]
+        _last_mail_search.pop(chat_id, None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _show_mail_action_confirm(chat_id, mail, mode, params)
 
 
 @app.on_event("startup")
