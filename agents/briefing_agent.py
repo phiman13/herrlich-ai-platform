@@ -1,17 +1,16 @@
-# agents/briefing_agent.py
 import logging
+import os
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 try:
-    from weather_agent import get_weather_today
+    from weather_agent import get_weather
     from news_agent import get_ai_news
     from github_agent import get_github_summary
     from tasks_agent import get_tasks
     from calendar_agent import CalendarAgent, BERLIN
     from mail_agent import MailAgent
 except ImportError:
-    from agents.weather_agent import get_weather_today
+    from agents.weather_agent import get_weather
     from agents.news_agent import get_ai_news
     from agents.github_agent import get_github_summary
     from agents.tasks_agent import get_tasks
@@ -22,7 +21,17 @@ logger = logging.getLogger("jarvis.briefing")
 
 _calendar = CalendarAgent()
 
-_WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+_WEEKDAYS = [
+    "Montag",
+    "Dienstag",
+    "Mittwoch",
+    "Donnerstag",
+    "Freitag",
+    "Samstag",
+    "Sonntag",
+]
+
+_BRIEFING_TASK_LIST = os.environ.get("REMINDER_TODO_LIST", "Tasks")
 
 
 def _get_calendar_today() -> str:
@@ -54,19 +63,22 @@ def _get_mail_unread() -> str:
             sender = (m.sender_name or m.sender_email or "?")[:30]
             subject = m.subject[:60]
             time_str = m.received.astimezone(BERLIN).strftime("%H:%M")
-            lines.append(f"• {sender}: \"{subject}\" — {time_str}")
+            lines.append(f'• {sender}: "{subject}" — {time_str}')
         return "\n".join(lines)
     except Exception as e:
         logger.warning(f"Mail-Fehler: {e}")
         return ""
 
 
-def _get_reminders() -> list[str]:
+def _get_open_tasks() -> str:
     try:
-        return _calendar.get_reminders_today()
+        result = get_tasks(_BRIEFING_TASK_LIST)
+        # Strip the header line, return only bullet items
+        lines = [line for line in result.splitlines() if line.startswith("•")]
+        return "\n".join(lines) if lines else ""
     except Exception as e:
-        logger.warning(f"Reminders-Fehler: {e}")
-        return []
+        logger.warning(f"Tasks-Fehler: {e}")
+        return ""
 
 
 def _safe(fn, *args, **kwargs):
@@ -82,11 +94,10 @@ async def build_briefing() -> str:
     weekday = _WEEKDAYS[now.weekday()]
     date_str = now.strftime("%d.%m.%Y")
 
-    weather = _safe(get_weather_today)
+    weather = _safe(get_weather, "today")
     calendar_today = _safe(_get_calendar_today)
     mail_unread = _safe(_get_mail_unread)
-    reminders = _safe(_get_reminders) or []
-    tasks_str = _safe(get_tasks)
+    tasks_str = _safe(_get_open_tasks)
     github_str = _safe(get_github_summary)
     news_str = _safe(get_ai_news, hours=24, max_items=5)
 
@@ -99,11 +110,7 @@ async def build_briefing() -> str:
         sections.append(f"📧 *MAIL*\n{mail_unread}")
 
     if tasks_str:
-        sections.append(f"✅ *MS TO DO*\n{tasks_str}")
-
-    if reminders:
-        r_lines = "\n".join(f"• {r}" for r in reminders)
-        sections.append(f"🔔 *APPLE ERINNERUNGEN*\n{r_lines}")
+        sections.append(f"✅ *TO DO ({_BRIEFING_TASK_LIST})*\n{tasks_str}")
 
     if weather:
         sections.append(f"🌤️ *WETTER*\n• {weather}")

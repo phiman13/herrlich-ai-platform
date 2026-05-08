@@ -117,7 +117,7 @@ def get_weather(
 
     for attempt in range(2):
         try:
-            resp = httpx.get(url, timeout=15)
+            resp = httpx.get(url, timeout=20)
             resp.raise_for_status()
             data = resp.json()
 
