@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+import anthropic
 import requests
 
 try:
@@ -230,3 +231,60 @@ class MailAgent:
         except Exception as e:
             self.logger.error("send_mail fehlgeschlagen: %s", e)
             return False
+
+    def get_recent_mails(self, n: int = 150, since: datetime | None = None) -> list:
+        params = {
+            "$top": n,
+            "$orderby": "receivedDateTime desc",
+            "$select": "id,subject,from,receivedDateTime,isRead,bodyPreview,hasAttachments",
+        }
+        data = self._get("/me/mailFolders/inbox/messages", params=params)
+        mails = [self._parse_mail(m, "inbox") for m in data.get("value", [])]
+        if since:
+            mails = [m for m in mails if m.received >= since]
+        return mails
+
+    def smart_search(
+        self,
+        query: str,
+        n: int = 150,
+        since: datetime | None = None,
+    ) -> list:
+        mails = self.get_recent_mails(n=n, since=since)
+        if not mails:
+            return []
+
+        from zoneinfo import ZoneInfo
+
+        berlin = ZoneInfo("Europe/Berlin")
+        lines = []
+        for i, m in enumerate(mails):
+            sender = (m.sender_name or m.sender_email or "?")[:40]
+            date_str = m.received.astimezone(berlin).strftime("%d.%m %H:%M")
+            lines.append(
+                f"{i}: [{date_str}] {sender} | {m.subject[:80]} | {m.preview[:100]}"
+            )
+
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            temperature=0,
+            system=(
+                "Du analysierst eine E-Mail-Liste. Gib die Indizes (kommagetrennt) der Mails zurück, "
+                "die zur Suchanfrage passen. Antworte NUR mit Zahlen kommagetrennt, z.B.: 3,7,12 "
+                "— oder 'none' falls keine passen."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Suchanfrage: {query}\n\nMails:\n" + "\n".join(lines),
+                }
+            ],
+        )
+        result = resp.content[0].text.strip()
+        if result.lower() == "none":
+            return []
+
+        indices = [int(x.strip()) for x in result.split(",") if x.strip().isdigit()]
+        return [mails[i] for i in indices if i < len(mails)]

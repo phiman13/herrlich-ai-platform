@@ -289,21 +289,11 @@ async def handle_mail(chat_id, text, params):
             mails = await asyncio.to_thread(agent.get_unread, n, folder_id)
             response = format_mail_list(mails, header=f"📬 Ungelesen ({len(mails)})")
         elif mode == "search":
-            n = count or 25
             since = datetime.fromisoformat(since_iso) if since_iso else None
-            mails = await asyncio.to_thread(
-                agent.search, sender, subject_contains, since, folder_id, n
-            )
-            header_parts = ["🔍 Suche"]
-            if sender:
-                header_parts.append(f"Absender: {sender}")
-            if subject_contains:
-                header_parts.append(f"Betreff: {subject_contains}")
-            if folder_name:
-                header_parts.append(f"Ordner: {folder_name}")
-            response = format_mail_list(
-                mails, header=" — ".join(header_parts) + f" ({len(mails)})"
-            )
+            query_parts = [p for p in [sender, subject_contains, text] if p]
+            query = " ".join(query_parts) if query_parts else text
+            mails = await asyncio.to_thread(agent.smart_search, query, 150, since)
+            response = format_mail_list(mails, header=f"🔍 Suche ({len(mails)})")
         else:
             n = count or 10
             mails = await asyncio.to_thread(agent.quick_scan, n, folder_id)
