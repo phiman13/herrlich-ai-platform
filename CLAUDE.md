@@ -1,90 +1,280 @@
 # Jarvis — herrlich-ai-platform
 
-Persönlicher KI-Assistent via Telegram (@jarvis_herrlich_bot). FastAPI-Gateway auf VPS, routet Nachrichten per Claude an spezialisierte Agenten.
+Persönlicher KI-Assistent via Telegram (@jarvis_herrlich_bot). FastAPI-Gateway auf Hetzner VPS, routet Nachrichten per Claude Haiku an spezialisierte Agenten.
 
 **VPS:** `root@100.115.184.3` (Tailscale) | **Service:** `jarvis.service` | **Live:** herrlich.dev
 
 ---
 
-## Architektur
+## Architektur-Überblick
 
 ```
-agents/main.py          Telegram-Webhook-Gateway (FastAPI) + APScheduler
-agents/router.py        Claude Haiku — Intent-Routing (mit 3-Nachrichten-Kontext)
-agents/proactive_agent.py  Scheduler-Jobs (Briefing, Mail-Check, Task-Reminder, Weekly)
-agents/<name>.py        Spezialisierte Agenten (siehe unten)
-agents/db.py            ConversationDB (SQLite)
-agents/microsoft_auth.py   MSAL OAuth-Flow für MS Graph
-config/                 Caddy Caddyfile, jarvis.service
-scripts/claude-guard.sh Bash-Hook: Blockliste für destruktive Kommandos
-tests/                  pytest — immer mit PYTHONPATH=agents ausführen
+Telegram Webhook (POST /webhook/telegram)
+        │
+        ▼
+agents/main.py              FastAPI Gateway + APScheduler
+        │
+        ├── Voice? → voice_agent.py → transkribieren → weiter als Text
+        │
+        ▼
+agents/router.py            Claude Haiku — klassifiziert Intent
+        │                   Input: aktueller Text + letzte 3 User-Nachrichten
+        │                   Output: {intent, confidence, params, reasoning}
+        │
+        ├── mail            mail_agent.py
+        ├── calendar        calendar_agent.py
+        ├── tasks           tasks_agent.py
+        ├── reminder_write  tasks_agent.py (add_task mit due_date/due_time)
+        ├── weather         weather_agent.py
+        ├── news            news_agent.py
+        ├── briefing        briefing_agent.py
+        ├── coding          coding_agent.py + github_agent.py
+        ├── memory          memory_agent.py
+        ├── personal        Claude Sonnet + MemoryAgent (retrieve + extract)
+        ├── work            Claude Sonnet + MemoryAgent
+        └── research        Claude Sonnet + MemoryAgent + Web-Search
+
+APScheduler (SQLite Jobstore, restart-safe):
+        └── proactive_agent.py
 ```
 
-## Agenten
+---
 
-| Agent | Datei | Intents | Funktion |
-|---|---|---|---|
-| Briefing | briefing_agent.py | briefing | Tages-Briefing (News + Kalender + Wetter + Tasks) |
-| Calendar | calendar_agent.py | calendar | MS365 CalDAV lesen + Termine/Erinnerungen schreiben |
-| Coding | coding_agent.py | coding | Claude Code auf VPS triggern (Fragen + Aktionen) |
-| GitHub | github_agent.py | coding | PRs, Issues, Commits via gh CLI |
-| Mail | mail_agent.py | mail | MS Graph Mail lesen + schreiben (alle Write-Ops) |
-| Memory | memory_agent.py | memory | Notizen & Fakten (list, delete, auto-extract) |
-| News | news_agent.py | news | RSS-Feeds via Claude zusammenfassen |
-| Profile | profile_agent.py | — | Nutzerprofil-Kontext (wird in Startup geladen) |
-| Proactive | proactive_agent.py | — | APScheduler-Jobs (kein direkter Intent) |
-| Tasks | tasks_agent.py | tasks, reminder_write | MS To-Do lesen + schreiben |
-| Voice | voice_agent.py | — | Telegram-Sprachnachrichten transkribieren |
-| Weather | weather_agent.py | weather | Open-Meteo Wetter (heute/morgen/Woche, Geocoding) |
+## Datei-Struktur
 
-## Mail-Agent Modi (mail intent)
+```
+agents/
+  main.py               Gateway: Webhook, Intent-Dispatch, Callbacks, APScheduler-Setup
+  router.py             Intent-Routing via Claude Haiku
+  db.py                 SessionDB, MemoryDB, ConversationDB, ProactiveDB (alle SQLite-async)
+  microsoft_auth.py     MSAL OAuth-Flow für MS Graph
+  mail_agent.py         MS Graph Mail (MailAgent-Klasse)
+  calendar_agent.py     iCloud CalDAV (lesen + schreiben)
+  tasks_agent.py        MS Graph To-Do
+  briefing_agent.py     Morgenbriefing aggregiert
+  proactive_agent.py    APScheduler-Jobs
+  memory_agent.py       MemoryAgent-Klasse (Embeddings + Extraktion)
+  news_agent.py         RSS + Claude-Zusammenfassung
+  coding_agent.py       Claude Code auf VPS triggern
+  github_agent.py       gh CLI wrapper
+  voice_agent.py        Groq Whisper Transkription
+  weather_agent.py      Open-Meteo API
+  profile_agent.py      Nutzerprofil-Kontext laden
+  vps.py                Workspace-Verwaltung (Projektliste etc.)
+  ntfy_agent.py         ntfy.sh Push-Notifications (angelegt, nicht aktiv)
+  requirements.txt      Python-Abhängigkeiten
+  claude-settings.json  Claude Code Permission-Config (VPS)
 
-**Lesen:** `quick_scan` · `unread` · `search` · `list_folders`
+scripts/
+  claude-guard.sh       Bash-Hook: blockt destruktive Befehle
 
-**Schreiben (Write-Ops mit Smart-Search + Confirm-Dialog):**
-`compose` · `mark_read` · `mark_unread` · `archive` · `move` · `delete` · `reply` · `forward`
+config/
+  caddy/Caddyfile       Reverse Proxy (herrlich.dev → :9000)
+  jarvis.service        systemd Unit
 
-Write-Ops nutzen `smart_search(mail_query, n=50)` zur Mail-Identifikation.
-Ergebnis 0 → Fehlermeldung | 1 → direkt Confirm | 2–5 → InlineKeyboard-Auswahl | >5 → "zu viele Treffer"
-`mark_read`/`mark_unread` ohne Confirm-Dialog (trivial reversibel).
+tests/                  pytest-Suite (PYTHONPATH=agents)
+docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
+```
 
-## Pending State (main.py)
+---
+
+## Environment Variables (`/root/.env` auf VPS)
+
+| Variable | Pflicht | Beschreibung |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | ✅ | Bot-Token von @BotFather |
+| `TELEGRAM_CHAT_ID` | ✅ | Chat-ID für proaktive Nachrichten (Philipps Chat) |
+| `ANTHROPIC_API_KEY` | ✅ | Anthropic API Key (wird vom SDK automatisch gelesen) |
+| `MICROSOFT_CLIENT_ID` | ✅ | Azure App Registration Client ID |
+| `MICROSOFT_CLIENT_SECRET` | ✅ | Azure App Registration Client Secret |
+| `OAUTH_LOGIN_SECRET` | ✅ | Schützt `/oauth/microsoft/login` Endpoint |
+| `ICLOUD_USER` | ✅ | Apple-ID E-Mail für CalDAV |
+| `ICLOUD_APP_PASSWORD` | ✅ | Apple App-spezifisches Passwort für CalDAV |
+| `CALENDAR_WHITELIST` | ✅ | Komma-separierte Kalender-Namen, z.B. `Privat,Arbeit` |
+| `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
+| `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
+| `REMINDER_TODO_LIST` | ❌ | To-Do-Liste für Erinnerungen (Default: `Tasks`) |
+| `WEATHER_LAT` | ❌ | Breitengrad Heimatort (Default: `48.14`) |
+| `WEATHER_LON` | ❌ | Längengrad Heimatort (Default: `11.58`) |
+| `WEATHER_LOCATION_NAME` | ❌ | Anzeigename Heimatort (Default: `Tutzing`) |
+| `NTFY_REMINDER_TOPIC` | ❌ | ntfy.sh Topic (noch nicht aktiv) |
+
+---
+
+## Datenbank-Dateien (alle auf VPS unter `/root/.jarvis/`)
+
+| Datei | Klasse | Inhalt |
+|---|---|---|
+| `conversations.db` | `ConversationDB` | Gesprächsverlauf pro chat_id (role, content, timestamp) — nur für personal/work/research |
+| `memories.db` | `MemoryDB` | Extrahierte Fakten + Notizen (text, source, embedding blob, created_at) |
+| `sessions.db` | `SessionDB` | Claude-Code-Session-IDs pro Projekt (TTL 2h) |
+| `proactive.db` | `ProactiveDB` | reported_mails (mail_id, reported_at) + reminded_tasks (task_id, reminded_at) — 30-Tage-TTL |
+| `microsoft_tokens.json` | — | MSAL Token-Cache (verschlüsselt durch MSAL) |
+| `scheduler.db` | APScheduler | Persistente Job-Definitionen (restart-safe) |
+
+---
+
+## Claude-Modelle im Einsatz
+
+| Verwendung | Modell |
+|---|---|
+| Intent-Routing (`router.py`) | `claude-haiku-4-5-20251001` |
+| Personal / Work / Research Antworten | `claude-sonnet-4-6` |
+| Mail-Importance-Check (`proactive_agent.py`) | `claude-haiku-4-5-20251001` |
+| Weekly Review (`proactive_agent.py`) | `claude-sonnet-4-6` |
+| Mail Smart-Search (`mail_agent.py`) | `claude-haiku-4-5-20251001` |
+| Memory-Extraktion (`memory_agent.py`) | `claude-haiku-4-5-20251001` |
+| Briefing (`main.py`) | `claude-haiku-4-5-20251001` |
+
+---
+
+## Agenten im Detail
+
+### mail_agent.py — MailAgent-Klasse
+MS Graph REST-Calls via `requests`. Token via `get_access_token()` (MSAL).
+
+**Lese-Methoden:** `quick_scan`, `get_unread`, `search`, `smart_search`, `list_folders`, `find_folder_by_name`, `get_mail_body`
+
+**Schreib-Methoden:** `mark_read`, `archive`, `move`, `delete`, `reply`, `forward`, `send_mail`
+
+**Write-Flow in main.py:**
+1. `_handle_mail_write()` → `smart_search(mail_query, n=50)`
+2. 0 Treffer → Fehlermeldung | >5 Treffer → "zu viele" | 1 Treffer → direkt Confirm | 2–5 → InlineKeyboard
+3. Auswahl gespeichert in `_last_mail_search[chat_id]` (TTL 3 Min)
+4. `_show_mail_action_confirm()` → mark_read/unread direkt ausführen, alle anderen → Confirm-Dialog
+5. Confirm gespeichert in `_pending_mail_ops[chat_id]`
+6. Callback `mail:action:confirm` → Aktion ausführen
+
+**Hinweis:** MS Graph `/messages/{id}/archive` existiert nicht → stattdessen `move` mit `destinationId: "archive"`
+
+### calendar_agent.py — CalendarAgent-Klasse
+iCloud CalDAV via `caldav`-Bibliothek. Konfiguriert via `ICLOUD_USER`, `ICLOUD_APP_PASSWORD`, `CALENDAR_WHITELIST`.
+
+Kalender-Schrankenliste: nur Kalender aus `CALENDAR_WHITELIST` werden gelesen/beschrieben.
+Erinnerungen: `/reminders/`-Kalender werden separat behandelt (`get_all_reminders`, `create_reminder`).
+
+### tasks_agent.py
+MS Graph To-Do. Kein eigenes Class-Wrapper — direkte `httpx`-Calls mit Token aus `get_access_token()`.
+
+`add_task(list_name, title, due_date=None, due_time=None)`:
+- Setzt `dueDateTime`, `isReminderOn=True`, `reminderDateTime` auf `due_time` (Default: 09:00)
+- System-Tasks werden in `get_tasks_raw()` via `_SYSTEM_TASK_PREFIXES` herausgefiltert
+
+### memory_agent.py — MemoryAgent-Klasse
+Embeddings via `sentence-transformers` (Modell wird lazy geladen, Fallback: kein Embedding).
+Speichert Fakten aus Gesprächen → `MemoryDB`. Retrieval via Cosine-Similarity.
+Wird nach jedem personal/work/research Response automatisch aufgerufen (`extract(user_msg, assistant_msg)`).
+
+### proactive_agent.py
+Alle Jobs sind async, laufen als APScheduler-Jobs.
+- `check_important_mails()`: Holt ungelesene Inbox-Mails → Claude-Haiku-Wichtigkeitsprüfung → sendet Digest wenn wichtig. Bereits gemeldete Mails in `ProactiveDB` skippt.
+- `send_task_reminder()`: Tasks > 2 Tage offen + nicht innerhalb 2 Tage erinnert → Telegram-Nachricht.
+- `send_weekly_review()`: Freitags — abgeschlossene Tasks + Kalender-Woche → Claude-Sonnet-Zusammenfassung.
+
+### router.py
+Baut dynamisch einen System-Prompt mit aktuellen Kalender-Namen, To-Do-Listen, Mail-Ordnern.
+Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 → Fallback-Antwort.
+
+---
+
+## Pending-State in main.py (Module-Level)
 
 ```python
-_pending_mail_ops: dict[int, dict]   # Mail-Write-Op wartet auf Confirm-Button
-_last_mail_search: dict[int, dict]   # Multi-Treffer-Auswahl (TTL: 3 Min)
-_recent_user_texts: dict[int, list]  # Letzte 10 User-Nachrichten für Router-Kontext
+_pending_mail_ops: dict[int, dict]    # Mail-Write-Op wartet auf Confirm-Button
+_last_mail_search: dict[int, dict]    # Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
+_recent_user_texts: dict[int, list]   # Letzte 10 User-Nachrichten pro chat_id für Router-Kontext
 ```
+
+---
 
 ## Callbacks (InlineKeyboard)
 
-| Callback | Aktion |
-|---|---|
-| `mail:send` | Compose-Entwurf absenden |
-| `mail:cancel` | Compose-Entwurf verwerfen |
-| `mail:action:confirm` | Pending Write-Op ausführen |
-| `mail:action:cancel` | Pending Write-Op verwerfen |
-| `mail:select:{n}` | Mail n aus Multi-Treffer-Liste auswählen |
-
-## Proaktive Jobs (APScheduler, SQLite Jobstore)
-
-| Job | Cron | Funktion |
+| Callback-Data | Handler | Aktion |
 |---|---|---|
-| send_briefing | Mo–Fr 07:00 Berlin | Morgenbriefing |
-| check_important_mails | 09:00 + 14:00 | Ungelesene Mails → Claude-Wichtigkeitsprüfung |
-| send_task_reminder | 14:00 | Tasks > 2 Tage offen → Erinnerung |
-| send_weekly_review | Fr 17:00 | Wochenrückblick |
+| `mail:send` | handle_callback | Compose-Entwurf absenden |
+| `mail:cancel` | handle_callback | Compose-Entwurf verwerfen |
+| `mail:action:confirm` | handle_callback | Pending Write-Op ausführen (archive/delete/move/reply/forward) |
+| `mail:action:cancel` | handle_callback | Pending Write-Op + Suchergebnis verwerfen |
+| `mail:select:{n}` | handle_callback | Mail n aus Multi-Treffer-Liste wählen → Confirm |
+
+---
 
 ## MS Graph OAuth
 
-Scopes: `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared`
-Re-Auth-URL: `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
-Token-Speicher: `/root/.jarvis/microsoft_tokens.json`
+**Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared`
+**Authority:** `https://login.microsoftonline.com/consumers` (persönliche MS-Accounts)
+**Token-Cache:** `/root/.jarvis/microsoft_tokens.json` (MSAL SerializableTokenCache)
+**Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
+
+Achtung: Nach Scope-Änderung muss Re-Auth durchgeführt werden — MSAL upgraded Token nicht automatisch.
+Kalender läuft über CalDAV (iCloud), nicht über MS Graph.
+
+---
+
+## Tests
+
+```bash
+# Standard (kein Live-API-Zugang nötig)
+PYTHONPATH=agents .venv/bin/pytest tests/ -q --tb=short \
+  --ignore=tests/test_briefing_agent.py \
+  --ignore=tests/test_mail_send.py \
+  --ignore=tests/test_tasks_agent.py
+
+# Mit Live-APIs (VPS oder VPN + MS-Token)
+PYTHONPATH=agents .venv/bin/pytest tests/ -v --tb=short
+```
+
+**Test-Dateien:**
+
+| Datei | Live-API? | Testet |
+|---|---|---|
+| test_mail_write.py | Nein | MailAgent Write-Methoden (mock requests) |
+| test_memory_agent.py | Nein | MemoryAgent extract/retrieve |
+| test_router_context.py | Nein | Router mit Kontext-Nachrichten |
+| test_proactive_agent.py | Nein | ProactiveAgent-Logik (mock) |
+| test_weather_agent.py | Nein | Weather-Parsing |
+| test_briefing_agent.py | **Ja** | Briefing-Build (Live-APIs) |
+| test_mail_send.py | **Ja** | Mail-Senden via MS Graph |
+| test_tasks_agent.py | **Ja** | To-Do via MS Graph |
+
+**Mock-Muster in test_mail_write.py:**
+```python
+with patch("agents.mail_agent.get_access_token", return_value="tok"), \
+     patch("requests.post", return_value=_ok(200)) as mock_post:
+    result = agent.archive("mail123")
+```
+
+---
+
+## Neuen Agenten / Intent hinzufügen — Checkliste
+
+1. **`agents/<name>_agent.py`** — Agenten-Logik implementieren
+2. **`agents/router.py`** — neuen Intent in `_SYSTEM_TEMPLATE` dokumentieren (Beispiele + Parameter)
+3. **`agents/router.py`** — Intent-Name in die Whitelist-Liste im `route_with_llm`-Validator eintragen
+4. **`agents/main.py`** — `elif intent == "<name>":` Block in `_process_text()` hinzufügen
+5. **`tests/test_<name>.py`** — Unit-Tests (mocked)
+6. **`CLAUDE.md`** — Agenten-Tabelle aktualisieren
+
+---
+
+## Proaktive Jobs (APScheduler)
+
+| Job-ID | Cron | Funktion | Modell |
+|---|---|---|---|
+| `send_briefing` | Mo–Fr 07:00 Berlin | Morgenbriefing | Haiku |
+| `check_important_mails` | 09:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
+| `check_important_mails` | 14:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
+| `send_task_reminder` | 14:00 täglich | Überfällige Tasks | — |
+| `send_weekly_review` | Fr 17:00 | Wochenrückblick | Sonnet |
+
+Jobs werden in `scheduler.db` (SQLite) persistiert — überleben Neustarts.
+
+---
 
 ## Key Commands
 
 ```bash
-# Tests (lokal, ohne externe APIs)
+# Tests lokal
 PYTHONPATH=agents .venv/bin/pytest tests/ -q --tb=short \
   --ignore=tests/test_briefing_agent.py \
   --ignore=tests/test_mail_send.py \
@@ -98,21 +288,31 @@ ssh root@100.115.184.3 "journalctl -u jarvis -f --no-pager"
 
 # Service-Status
 ssh root@100.115.184.3 "systemctl status jarvis"
+
+# VPS direkt öffnen
+ssh root@100.115.184.3
 ```
+
+---
 
 ## Stack
 
-Python 3.11 · FastAPI · python-telegram-bot · anthropic SDK · MSAL · APScheduler
-MS Graph API · CalDAV · Open-Meteo · systemd · Caddy
+Python 3.11 · FastAPI · python-telegram-bot · anthropic SDK · MSAL · APScheduler 3.x
+MS Graph API · iCloud CalDAV · Open-Meteo · Groq Whisper · systemd · Caddy
 
-## Besonderheiten
+---
 
-- Alle Agenten laufen im gleichen Prozess (kein Microservice-Split)
-- Router nutzt Claude Haiku für Intent-Routing + letzte 3 User-Nachrichten als Kontext
-- Conversation History (letzte 20 Nachrichten) nur für `personal`/`work`/`research` Intents
-- Memory-Extraktion läuft automatisch nach jedem `personal`/`work`/`research` Response
-- `test_briefing_agent`, `test_mail_send`, `test_tasks_agent` → Live-API nötig, lokal ignorieren
-- `.venv` liegt im Projekt-Root, `PYTHONPATH=agents` immer setzen
-- VPS-Code: `/root/agents/` (git clone), systemd liest Secrets aus `/root/.env`
-- `agents/claude-settings.json` + `scripts/claude-guard.sh` = Claude Code Hook-Config auf VPS
-- Briefing-Text mit Markdown-Fehler → automatischer Fallback auf Plaintext
+## Bekannte Eigenheiten & Fallstricke
+
+- **Alle Agenten im gleichen Prozess** — kein Microservice-Split, kein shared state zwischen Requests außer den module-level Dicts
+- **Router-Kontext**: nur User-Nachrichten (nicht Jarvis-Antworten) — letzte 3 aus `_recent_user_texts`
+- **Conversation History** nur für `personal`/`work`/`research` — andere Intents haben kein Claude-Gedächtnis
+- **Memory-Extraktion** läuft async nach jedem personal/work/research Response (nicht blockierend)
+- **MS Graph `/archive`-Endpoint** existiert nicht für persönliche Accounts → wird als `move` mit `destinationId: "archive"` implementiert
+- **Briefing** kann Markdown-Fehler produzieren (unkontrollierte `*`/`_` in News/Kalender) → automatischer Plaintext-Fallback
+- **CalDAV Erinnerungen** — Apple Reminders über CalDAV seit iOS 13 instabil. Neue Erinnerungen gehen in MS To-Do (tasks_agent)
+- **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
+- **`.venv`** liegt im Projekt-Root — auf VPS ist es `/root/agents/venv/`
+- **VPS-Code** unter `/root/agents/` (git clone von GitHub), systemd liest Secrets aus `/root/.env`
+- **`db 2.py`** — veraltete Kopie, ignorieren
+- **`ntfy_agent.py`** — angelegt aber nicht in Betrieb (kein aktiver Intent)
