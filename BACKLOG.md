@@ -18,10 +18,9 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026 (abends)
       `mail`, `calendar`, `tasks` könnten auch von History profitieren.
       Aufwand: 30 Min.
 
-- [ ] **Secret- & Permission-Hygiene auf VPS**
-      Claude Code läuft als root → Permissions-Drift möglich.
-      Fix: Claude Code via `sudo -u claude`, Ownership-Audit,
-      evtl. 1Password-CLI für Env-Injection statt `.env`.
+- [ ] **Secret- & Permission-Hygiene auf VPS — Restarbeiten**
+      Jarvis läuft jetzt als `jarvis`-User, Claude Code als `claude`-User. ✅
+      Noch offen: 1Password-CLI für Env-Injection statt `.env` (`.env` liegt unter `/var/lib/jarvis/` mit restriktiven Rechten — akzeptables Risiko).
 
 ---
 

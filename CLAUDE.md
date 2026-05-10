@@ -66,7 +66,9 @@ agents/
   claude-settings.json  Claude Code Permission-Config (VPS)
 
 scripts/
-  claude-guard.sh       Bash-Hook: blockt destruktive Befehle
+  claude-guard.sh             Bash-Hook: blockt destruktive Befehle
+  backup_jarvis.sh            SQLite-Backup, Cron 3:00 täglich, 7-Tage-Rotation
+  migrate_to_jarvis_user.sh   Migration root → jarvis-User (einmalig ausgeführt)
 
 config/
   caddy/Caddyfile       Reverse Proxy (herrlich.dev → :9000)
@@ -78,7 +80,7 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 
 ---
 
-## Environment Variables (`/root/.env` auf VPS)
+## Environment Variables (`/var/lib/jarvis/.env` auf VPS)
 
 | Variable | Pflicht | Beschreibung |
 |---|---|---|
@@ -92,7 +94,9 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 | `ICLOUD_APP_PASSWORD` | ✅ | Apple App-spezifisches Passwort für CalDAV |
 | `CALENDAR_WHITELIST` | ✅ | Komma-separierte Kalender-Namen, z.B. `Privat,Arbeit` |
 | `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
+| `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
 | `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
+| `JARVIS_DATA_DIR` | ❌ | Pfad für DBs + Tokens (Default: `/root/.jarvis`, prod: `/var/lib/jarvis/.jarvis`) |
 | `REMINDER_TODO_LIST` | ❌ | To-Do-Liste für Erinnerungen (Default: `Tasks`) |
 | `WEATHER_LAT` | ❌ | Breitengrad Heimatort (Default: `48.14`) |
 | `WEATHER_LON` | ❌ | Längengrad Heimatort (Default: `11.58`) |
@@ -101,7 +105,7 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 
 ---
 
-## Datenbank-Dateien (alle auf VPS unter `/root/.jarvis/`)
+## Datenbank-Dateien (alle auf VPS unter `/var/lib/jarvis/.jarvis/`)
 
 | Datei | Klasse | Inhalt |
 |---|---|---|
@@ -182,7 +186,7 @@ Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 →
 ```python
 _pending_mail_ops: dict[int, dict]    # Mail-Write-Op wartet auf Confirm-Button
 _last_mail_search: dict[int, dict]    # Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
-_recent_user_texts: dict[int, list]   # Letzte 10 User-Nachrichten pro chat_id für Router-Kontext
+_recent_conv: dict[int, list]         # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
 ```
 
 ---
@@ -203,7 +207,7 @@ _recent_user_texts: dict[int, list]   # Letzte 10 User-Nachrichten pro chat_id f
 
 **Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared`
 **Authority:** `https://login.microsoftonline.com/consumers` (persönliche MS-Accounts)
-**Token-Cache:** `/root/.jarvis/microsoft_tokens.json` (MSAL SerializableTokenCache)
+**Token-Cache:** `/var/lib/jarvis/.jarvis/microsoft_tokens.json` (MSAL SerializableTokenCache)
 **Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
 
 Achtung: Nach Scope-Änderung muss Re-Auth durchgeführt werden — MSAL upgraded Token nicht automatisch.
@@ -271,6 +275,39 @@ Jobs werden in `scheduler.db` (SQLite) persistiert — überleben Neustarts.
 
 ---
 
+## GitHub Webhook — Auto-Deploy
+
+`POST /webhook/github` — validiert HMAC, führt `git fetch + reset --hard origin/main` aus, dann repo-spezifische Post-Pull-Aktionen.
+
+```python
+_GITHUB_REPOS: dict[str, dict] = {
+    "herrlich-ai-platform": {
+        "git_path": "/opt/herrlich-ai-platform",
+        "post_rsync": ("/opt/herrlich-ai-platform/agents/", "/opt/jarvis/"),
+        "post_restart": "jarvis",
+    },
+    "high-five-website": {
+        "git_path": "/opt/high-five-website",
+        "post_docker": "/opt/high-five-website",
+    },
+    "immo-radar": {
+        "git_path": "/opt/immo-radar",
+        "post_docker": "/opt/immo-radar",
+    },
+    "refurbish-business": {
+        "git_path": "/opt/refurbish-business",
+        "post_docker": "/opt/refurbish-business",
+    },
+}
+```
+
+**Post-Pull-Aktionen:**
+- `post_rsync`: rsync src → dst (sync agents/ ins laufende Service-Verzeichnis)
+- `post_restart`: `systemctl restart <service>` (nach 3s Delay via Popen)
+- `post_docker`: `docker compose up -d --build` im angegebenen Verzeichnis
+
+---
+
 ## Key Commands
 
 ```bash
@@ -280,8 +317,9 @@ PYTHONPATH=agents .venv/bin/pytest tests/ -q --tb=short \
   --ignore=tests/test_mail_send.py \
   --ignore=tests/test_tasks_agent.py
 
-# Deploy auf VPS
-ssh root@100.115.184.3 "cd /root/agents && git pull && systemctl restart jarvis"
+# Deploy auf VPS — läuft automatisch via GitHub Webhook nach git push
+# Manuell (Notfall):
+ssh root@100.115.184.3 "cd /opt/herrlich-ai-platform && git pull && rsync -a --delete agents/ /opt/jarvis/ && systemctl restart jarvis"
 
 # Logs live
 ssh root@100.115.184.3 "journalctl -u jarvis -f --no-pager"
@@ -305,14 +343,14 @@ MS Graph API · iCloud CalDAV · Open-Meteo · Groq Whisper · systemd · Caddy
 ## Bekannte Eigenheiten & Fallstricke
 
 - **Alle Agenten im gleichen Prozess** — kein Microservice-Split, kein shared state zwischen Requests außer den module-level Dicts
-- **Router-Kontext**: nur User-Nachrichten (nicht Jarvis-Antworten) — letzte 3 aus `_recent_user_texts`
+- **Router-Kontext**: interleaved User+Jarvis-Paare — letzte Einträge aus `_recent_conv`
 - **Conversation History** nur für `personal`/`work`/`research` — andere Intents haben kein Claude-Gedächtnis
 - **Memory-Extraktion** läuft async nach jedem personal/work/research Response (nicht blockierend)
 - **MS Graph `/archive`-Endpoint** existiert nicht für persönliche Accounts → wird als `move` mit `destinationId: "archive"` implementiert
 - **Briefing** kann Markdown-Fehler produzieren (unkontrollierte `*`/`_` in News/Kalender) → automatischer Plaintext-Fallback
 - **CalDAV Erinnerungen** — Apple Reminders über CalDAV seit iOS 13 instabil. Neue Erinnerungen gehen in MS To-Do (tasks_agent)
 - **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
-- **`.venv`** liegt im Projekt-Root — auf VPS ist es `/root/agents/venv/`
-- **VPS-Code** unter `/root/agents/` (git clone von GitHub), systemd liest Secrets aus `/root/.env`
+- **`.venv`** liegt im Projekt-Root — auf VPS ist es `/opt/jarvis/venv/`
+- **VPS-Code** unter `/opt/herrlich-ai-platform/` (git clone), rsync synchronisiert `agents/` → `/opt/jarvis/` nach jedem Pull; systemd liest Secrets aus `/var/lib/jarvis/.env`
 - **`db 2.py`** — veraltete Kopie, ignorieren
 - **`ntfy_agent.py`** — angelegt aber nicht in Betrieb (kein aktiver Intent)
