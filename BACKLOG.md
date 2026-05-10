@@ -6,11 +6,6 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026 (abends)
 
 ## P1 — Nächster Schritt
 
-- [ ] **Claude Code nicht als root — Migration durchführen** — Code ist fertig
-      (`scripts/migrate_to_jarvis_user.sh`, `JARVIS_DATA_DIR` env var, service-Kommentar).
-      Noch nötig: Script auf VPS ausführen (`bash /root/herrlich-ai-platform/scripts/migrate_to_jarvis_user.sh`).
-      Aufwand: 15 Min. (interaktiv, VPS-Zugriff nötig)
-
 - [ ] **GitHub Webhook aktivieren** — Endpoint ist live (`POST /webhook/github`).
       Noch nötig: `GITHUB_WEBHOOK_SECRET=<secret>` in `/root/.env` setzen + VPS restarten,
       dann in GitHub für jedes Repo unter Settings → Webhooks eintragen:
@@ -67,6 +62,7 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026 (abends)
 ## Erledigt
 
 ### 10.05.2026
+- [x] Claude Code nicht als root — jarvis-User angelegt, Service migriert auf /opt/jarvis, JARVIS_DATA_DIR in allen Agenten (db.py, microsoft_auth.py, profile_agent.py, memory_agent.py)
 - [x] SQLite-Backup — `scripts/backup_jarvis.sh`, Cron 3:00 Uhr täglich, 7-Tage-Rotation
 - [x] Briefing: Markdown-Escaping — `_escape_md()` strippt `*`/`_` aus Kalender/Mail-Titeln
 - [x] Router-Kontext: Jarvis-Antworten — `_recent_conv` interleaved Philipp/Jarvis-Paare
