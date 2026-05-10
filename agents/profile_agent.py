@@ -6,7 +6,8 @@ import anthropic
 
 logger = logging.getLogger("jarvis.profile")
 
-PROFILE_PATH = "/root/.jarvis/user_profile.md"
+_JARVIS_DIR = os.environ.get("JARVIS_DATA_DIR", "/root/.jarvis")
+PROFILE_PATH = os.path.join(_JARVIS_DIR, "user_profile.md")
 
 _DEFAULT_PROFILE = """\
 # Philipp — Benutzerprofil

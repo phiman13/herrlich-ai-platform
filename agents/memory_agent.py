@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 
 import numpy as np
 
@@ -17,7 +18,8 @@ MEMORY_INTENTS = {"personal", "work", "research"}
 
 _claude = anthropic.Anthropic()
 CURRENT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-MARKER_FILE = "/root/.jarvis/.embedding_model"
+_JARVIS_DIR = os.environ.get("JARVIS_DATA_DIR", "/root/.jarvis")
+MARKER_FILE = os.path.join(_JARVIS_DIR, ".embedding_model")
 
 _embedding_model = None
 
@@ -26,6 +28,7 @@ def _get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         from fastembed import TextEmbedding
+
         _embedding_model = TextEmbedding(CURRENT_MODEL)
     return _embedding_model
 
@@ -82,7 +85,9 @@ class MemoryAgent:
             await self.db.update_embedding(row["id"], new_embedding.tobytes())
         with open(MARKER_FILE, "w") as f:
             f.write(CURRENT_MODEL + "\n")
-        logger.info("Memory embeddings migrated to %s (%d memories)", CURRENT_MODEL, len(rows))
+        logger.info(
+            "Memory embeddings migrated to %s (%d memories)", CURRENT_MODEL, len(rows)
+        )
 
     async def extract(self, user_msg: str, assistant_msg: str, source: str = ""):
         conversation = f"Philipp: {user_msg}\n\nJarvis: {assistant_msg}"
@@ -105,9 +110,12 @@ class MemoryAgent:
             # Haiku sometimes wraps JSON in preamble text — extract the array
             if not raw.startswith("["):
                 import re
+
                 m = re.search(r"\[.*\]", raw, re.DOTALL)
                 if not m:
-                    logger.debug("Memory extraction: no JSON array in response: %r", raw[:120])
+                    logger.debug(
+                        "Memory extraction: no JSON array in response: %r", raw[:120]
+                    )
                     return
                 raw = m.group(0)
             facts = json.loads(raw)
@@ -125,7 +133,10 @@ class MemoryAgent:
                 embedding = await asyncio.to_thread(_embed, content)
                 existing = await self.db.load_all()
                 duplicate = any(
-                    _cosine_sim(embedding, np.frombuffer(r["embedding"], dtype=np.float32)) >= 0.90
+                    _cosine_sim(
+                        embedding, np.frombuffer(r["embedding"], dtype=np.float32)
+                    )
+                    >= 0.90
                     for r in existing
                 )
                 if duplicate:
