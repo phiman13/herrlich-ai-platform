@@ -1245,10 +1245,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 _GITHUB_REPO_PATHS: dict[str, str] = {
-    "herrlich-ai-platform": "/root/agents",
-    "immo-radar": "/opt/immo-radar",
-    "refurbish-business": "/opt/refurbish-business",
-    "cv-project": "/opt/cv-project",
+    "herrlich-ai-platform": "/opt/jarvis",
+    "high-five-website": "/opt/high-five-website",
 }
 
 
