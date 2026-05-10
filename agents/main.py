@@ -1244,9 +1244,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_mail_action_confirm(chat_id, mail, mode, params)
 
 
-_GITHUB_REPO_PATHS: dict[str, str] = {
-    "herrlich-ai-platform": "/opt/jarvis",
-    "high-five-website": "/opt/high-five-website",
+# git_path: wo git pull läuft
+# post_rsync: (src, dst) — nach pull synchron rsync-en
+# post_docker: workdir für "docker compose up -d --build" (async, Popen)
+# post_restart: systemd-Servicename, der neu gestartet wird (3s Verzögerung)
+_GITHUB_REPOS: dict[str, dict] = {
+    "herrlich-ai-platform": {
+        "git_path": "/root/herrlich-ai-platform",
+        "post_rsync": ("/root/herrlich-ai-platform/agents/", "/opt/jarvis/"),
+        "post_restart": "jarvis",
+    },
+    "high-five-website": {
+        "git_path": "/opt/high-five-website",
+        "post_docker": "/opt/high-five-website",
+    },
+    "immo-radar": {
+        "git_path": "/opt/immo-radar",
+        "post_docker": "/opt/immo-radar",
+    },
+    "refurbish-business": {
+        "git_path": "/opt/refurbish-business",
+        "post_docker": "/opt/refurbish-business",
+    },
 }
 
 
@@ -1279,13 +1298,13 @@ async def github_webhook(request: Request):
     if ref not in ("refs/heads/main", "refs/heads/master"):
         return {"ok": True, "skipped": f"branch {ref} ignored"}
 
-    repo_path = _GITHUB_REPO_PATHS.get(repo_name)
-    if not repo_path or not os.path.isdir(repo_path):
+    repo_cfg = _GITHUB_REPOS.get(repo_name)
+    if not repo_cfg or not os.path.isdir(repo_cfg["git_path"]):
         return {"ok": True, "skipped": f"repo {repo_name!r} not configured"}
 
     try:
         result = subprocess.run(
-            ["git", "-C", repo_path, "pull", "--ff-only"],
+            ["git", "-C", repo_cfg["git_path"], "pull", "--ff-only"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -1296,12 +1315,48 @@ async def github_webhook(request: Request):
         success = False
         output = str(e)
 
+    already_up = "already up to date" in output.lower()
+
+    if success and not already_up:
+        if "post_rsync" in repo_cfg:
+            src, dst = repo_cfg["post_rsync"]
+            subprocess.run(
+                [
+                    "rsync",
+                    "-a",
+                    "--delete",
+                    "--exclude=venv",
+                    "--exclude=__pycache__",
+                    "--exclude=*.pyc",
+                    src,
+                    dst,
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+        if "post_docker" in repo_cfg:
+            subprocess.Popen(
+                ["docker", "compose", "up", "-d", "--build"],
+                cwd=repo_cfg["post_docker"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        if "post_restart" in repo_cfg:
+            subprocess.Popen(
+                [
+                    "bash",
+                    "-c",
+                    f"sleep 3 && systemctl restart {repo_cfg['post_restart']}",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
     chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
     if chat_id_str:
         try:
             bot = Bot(token=TELEGRAM_TOKEN)
             status = "✅" if success else "❌"
-            already_up = "already up to date" in output.lower()
             if not already_up:
                 await bot.send_message(
                     chat_id=int(chat_id_str),
@@ -1312,7 +1367,10 @@ async def github_webhook(request: Request):
             pass
 
     logger.info(
-        f"GitHub webhook: {repo_name} pull {'ok' if success else 'failed'}: {output}"
+        "GitHub webhook: %s pull %s: %s",
+        repo_name,
+        "ok" if success else "failed",
+        output,
     )
     return {"ok": True, "repo": repo_name, "pulled": success, "output": output}
 
