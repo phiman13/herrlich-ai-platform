@@ -1250,8 +1250,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # post_restart: systemd-Servicename, der neu gestartet wird (3s Verzögerung)
 _GITHUB_REPOS: dict[str, dict] = {
     "herrlich-ai-platform": {
-        "git_path": "/root/herrlich-ai-platform",
-        "post_rsync": ("/root/herrlich-ai-platform/agents/", "/opt/jarvis/"),
+        "git_path": "/opt/herrlich-ai-platform",
+        "post_rsync": ("/opt/herrlich-ai-platform/agents/", "/opt/jarvis/"),
         "post_restart": "jarvis",
     },
     "high-five-website": {
