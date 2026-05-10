@@ -72,13 +72,17 @@ def _resolve_project(name: str, projects: list[str]) -> str | None:
 async def _check_and_clone(project: str) -> str:
     """Check GitHub and clone if not archived. Returns: 'cloned'|'archived'|'not_found'|'error'"""
     import json as _json
+
     github_token = os.environ.get("GITHUB_TOKEN", "")
     if not github_token:
         return "error"
 
     github_user = "phiman13"
     proc = await asyncio.create_subprocess_exec(
-        "curl", "-sf", "-H", f"Authorization: token {github_token}",
+        "curl",
+        "-sf",
+        "-H",
+        f"Authorization: token {github_token}",
         f"https://api.github.com/repos/{github_user}/{project}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -94,7 +98,9 @@ async def _check_and_clone(project: str) -> str:
     if data.get("archived", False):
         return "archived"
 
-    clone_url = f"https://{github_user}:{github_token}@github.com/{github_user}/{project}.git"
+    clone_url = (
+        f"https://{github_user}:{github_token}@github.com/{github_user}/{project}.git"
+    )
     target = f"{WORKSPACE}/{project}"
     rc, _, _ = await run_as_claude(["git", "clone", clone_url, target])
     return "cloned" if rc == 0 else "error"
@@ -182,7 +188,8 @@ async def _run_claude_action(
     cmd = [
         "claude",
         "--dangerously-skip-permissions",
-        "--output-format", "stream-json",
+        "--output-format",
+        "stream-json",
         "--print",
     ]
     if existing_session:
@@ -223,7 +230,9 @@ async def add_backlog_item(project: str, item: str, priority: str = "P1") -> boo
     if section_header in content:
         insert_pos = content.index(section_header) + len(section_header)
         newline_pos = content.index("\n", insert_pos)
-        content = content[:newline_pos + 1] + new_line + "\n" + content[newline_pos + 1:]
+        content = (
+            content[: newline_pos + 1] + new_line + "\n" + content[newline_pos + 1 :]
+        )
     else:
         content += f"\n## {priority}\n{new_line}\n"
 
@@ -287,18 +296,12 @@ async def run_coding_action(task: str, project: str, chat_id: int):
     if len(output) > 3800:
         output = output[:3800] + "\n\n[… gekürzt]"
 
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-    keyboard = [[
-        InlineKeyboardButton("📤 Pushen", callback_data=f"push:{project}"),
-        InlineKeyboardButton("✓ OK", callback_data="dismiss"),
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    pushed = await git_push(project)
+    push_line = "📤 gepusht" if pushed else "⚠️ Push fehlgeschlagen"
 
     await bot.edit_message_text(
         chat_id=chat_id,
         message_id=status_msg.message_id,
-        text=f"✅ *{project}* — fertig\n\n{output}",
+        text=f"✅ *{project}* — fertig · {push_line}\n\n{output}",
         parse_mode="Markdown",
-        reply_markup=reply_markup,
     )
