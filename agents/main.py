@@ -1303,8 +1303,15 @@ async def github_webhook(request: Request):
         return {"ok": True, "skipped": f"repo {repo_name!r} not configured"}
 
     try:
+        # fetch + reset --hard statt pull --ff-only: blockiert nicht bei lokalen Änderungen
+        subprocess.run(
+            ["git", "-C", repo_cfg["git_path"], "fetch", "origin"],
+            capture_output=True,
+            timeout=30,
+        )
+        branch = "main"
         result = subprocess.run(
-            ["git", "-C", repo_cfg["git_path"], "pull", "--ff-only"],
+            ["git", "-C", repo_cfg["git_path"], "reset", "--hard", f"origin/{branch}"],
             capture_output=True,
             text=True,
             timeout=30,
