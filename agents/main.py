@@ -600,9 +600,12 @@ async def send_briefing():
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
     try:
         msg = await build_briefing()
-        await bot.send_message(
-            chat_id=int(chat_id_str), text=msg, parse_mode="Markdown"
-        )
+        try:
+            await bot.send_message(
+                chat_id=int(chat_id_str), text=msg, parse_mode="Markdown"
+            )
+        except Exception:
+            await bot.send_message(chat_id=int(chat_id_str), text=msg)
     except Exception as e:
         logger.exception(f"Briefing-Fehler: {e}")
 
