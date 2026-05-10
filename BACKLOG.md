@@ -6,27 +6,19 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026
 
 ## P1 — Nächster Schritt
 
-- [ ] **SQLite-Backup** — Täglicher Cronjob: `/root/.jarvis/*.db` + `microsoft_tokens.json`
-      nach `/root/backups/jarvis/` sichern, 7 Tage aufbewahren.
-      Aufwand: 20 Min.
+- [ ] **Claude Code nicht als root — Migration durchführen** — Code ist fertig
+      (`scripts/migrate_to_jarvis_user.sh`, `JARVIS_DATA_DIR` env var, service-Kommentar).
+      Noch nötig: Script auf VPS ausführen (`bash /root/herrlich-ai-platform/scripts/migrate_to_jarvis_user.sh`).
+      Aufwand: 15 Min. (interaktiv, VPS-Zugriff nötig)
 
-- [ ] **Briefing: Markdown-Escaping** — Wenn News-Titel oder Kalendereinträge
-      unkontrollierte `*`/`_`-Zeichen enthalten, schlägt Telegram-Parsing fehl.
-      Aktuell: Fallback auf Plaintext. Besser: Sonderzeichen im Briefing-Text escapen.
-      Aufwand: 15 Min.
-
-- [ ] **Claude Code nicht als root** — `jarvis.service` läuft als `User=root`.
-      Migration: `useradd jarvis`, Ownership-Transfer, `.env`-Pfad anpassen.
-      Aufwand: 60–90 Min. Risiko: Deployment-Pfade ändern sich.
+- [ ] **GitHub Webhook aktivieren** — Endpoint ist live (`POST /webhook/github`).
+      Noch nötig: `GITHUB_WEBHOOK_SECRET=<secret>` in `/root/.env` setzen + VPS restarten,
+      dann in GitHub für jedes Repo unter Settings → Webhooks eintragen:
+      URL `https://herrlich.dev/webhook/github`, Secret gleicher Wert, Event: `push`.
 
 ---
 
 ## P2 — Wichtig, nicht dringend
-
-- [ ] **Router-Kontext: Jarvis-Antworten einbeziehen**
-      Aktuell sieht der Router nur die letzten 3 User-Nachrichten, nicht Jarvis' Antworten.
-      Für Ketten wie "zeig mir die Antwort darauf" wäre der Bot-Output als Kontext hilfreich.
-      Aufwand: 30 Min.
 
 - [ ] **Mail: Verschieben in beliebigen Ordner**
       `move`-Op löst aktuell `find_folder_by_name()` auf — ungetestet.
@@ -42,10 +34,6 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026
       Claude Code läuft als root → Permissions-Drift möglich.
       Fix: Claude Code via `sudo -u claude`, Ownership-Audit,
       evtl. 1Password-CLI für Env-Injection statt `.env`.
-
-- [ ] **Auto-Sync Code-Workspaces via GitHub Webhook**
-      GitHub Webhook → FastAPI-Endpoint → `git pull` für betroffenes Repo.
-      Aufwand: 60–90 Min inkl. HMAC-Validierung.
 
 ---
 
@@ -77,6 +65,14 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026
 ---
 
 ## Erledigt
+
+### 10.05.2026
+- [x] SQLite-Backup — `scripts/backup_jarvis.sh`, Cron 3:00 Uhr täglich, 7-Tage-Rotation
+- [x] Briefing: Markdown-Escaping — `_escape_md()` strippt `*`/`_` aus Kalender/Mail-Titeln
+- [x] Router-Kontext: Jarvis-Antworten — `_recent_conv` interleaved Philipp/Jarvis-Paare
+- [x] GitHub Webhook Endpoint — `POST /webhook/github` mit HMAC-Validierung + git pull
+- [x] JARVIS_DATA_DIR env var — alle `/root/.jarvis/`-Pfade konfigurierbar (db.py, microsoft_auth.py, main.py)
+- [x] scripts/migrate_to_jarvis_user.sh — interaktives Migrationsskript root → jarvis-User
 
 ### 09.–10.05.2026
 - [x] Briefing: Fallback auf Plaintext wenn Markdown-Parse fehlschlägt
