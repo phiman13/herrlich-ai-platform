@@ -1,6 +1,10 @@
 import os
 import re
 import sys
+import json
+import hmac
+import hashlib
+import subprocess
 import logging
 import asyncio
 import time
@@ -82,7 +86,8 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 
 _pending_mail_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
-_recent_user_texts: dict[int, list[str]] = {}
+# Conversation history for router context: each entry {"u": user_text, "j": bot_summary}
+_recent_conv: dict[int, list[dict]] = {}
 _WRITE_MODES = {
     "mark_read",
     "mark_unread",
@@ -92,6 +97,30 @@ _WRITE_MODES = {
     "reply",
     "forward",
 }
+
+
+def _conv_append_user(chat_id: int, text: str) -> None:
+    hist = _recent_conv.get(chat_id, [])
+    hist.append({"u": text, "j": ""})
+    _recent_conv[chat_id] = hist[-8:]
+
+
+def _conv_complete(chat_id: int, summary: str) -> None:
+    hist = _recent_conv.get(chat_id, [])
+    if hist:
+        hist[-1]["j"] = summary[:180]
+
+
+def _conv_to_prev_texts(chat_id: int) -> list[str]:
+    """Return interleaved Philipp/Jarvis lines for the last 3 completed turns."""
+    completed = [t for t in _recent_conv.get(chat_id, []) if t["j"]][-3:]
+    lines = []
+    for t in completed:
+        lines.append(f"Philipp: {t['u']}")
+        lines.append(f"Jarvis: {t['j']}")
+    return lines
+
+
 _memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _conversation_db = None  # initialized in startup()
@@ -622,19 +651,20 @@ async def start(update, context):
 
 
 async def _process_text(text: str, chat_id: int, update: Update) -> None:
-    history = _recent_user_texts.get(chat_id, [])
-    recent = history[-3:] if len(history) >= 3 else history
-    _recent_user_texts[chat_id] = (history + [text])[-10:]
-    routing = await route_with_llm(text, prev_texts=recent)
+    prev = _conv_to_prev_texts(chat_id)
+    _conv_append_user(chat_id, text)
+    routing = await route_with_llm(text, prev_texts=prev or None)
     intent = routing["intent"]
     params = routing["params"]
 
     confidence = routing["confidence"]
     if confidence < 5:
-        await update.message.reply_text(
+        msg = (
             "Ich bin mir nicht ganz sicher, was du meinst. "
             "Bitte präzisiere: Kalender, Mail, Task-Liste, Coding oder etwas anderes?"
         )
+        await update.message.reply_text(msg)
+        _conv_complete(chat_id, msg)
         return
 
     memory_context = ""
@@ -683,10 +713,18 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             title=title,
             calendar_name=calendar_name,
         )
+        cal_summary = (
+            f"Termin erstellt: {title}"
+            if mode == "write" and title
+            else "Kalender angezeigt"
+        )
+        _conv_complete(chat_id, cal_summary)
         return
 
     if intent == "mail":
         await handle_mail(chat_id=chat_id, text=text, params=params)
+        mail_mode = params.get("mode", "")
+        _conv_complete(chat_id, f"Mail {mail_mode} ausgeführt")
         return
 
     if intent == "research":
@@ -741,6 +779,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
         else:  # action
             asyncio.create_task(run_coding_action(text, project, chat_id))
+        _conv_complete(chat_id, f"Coding {mode} ({project})")
 
     elif intent == "reminder_write":
         title = params.get("title", "")
@@ -762,18 +801,20 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                     if due_date_str
                     else ""
                 )
-                await update.message.reply_text(
-                    f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
-                )
+                msg = f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
+                await update.message.reply_text(msg)
+                _conv_complete(chat_id, msg)
             else:
                 await update.message.reply_text(
                     f"❌ Liste '{list_name}' nicht gefunden. Verfügbare Listen mit 'Zeig mir alle To-Do-Listen'."
                 )
+                _conv_complete(chat_id, f"Erinnerung '{title}' nicht erstellt")
         except Exception as e:
             logger.exception("reminder_write fehlgeschlagen")
             await update.message.reply_text(
                 f"❌ Erinnerung konnte nicht erstellt werden: {e}"
             )
+            _conv_complete(chat_id, "Erinnerung fehlgeschlagen")
         return
 
     elif intent == "work":
@@ -802,6 +843,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             f"📰 *AI NEWS — letzte 48h*\n\n{news or 'Keine News gefunden.'}",
             parse_mode="Markdown",
         )
+        _conv_complete(chat_id, "AI-News angezeigt")
 
     elif intent == "tasks":
         mode = params.get("mode", "read")
@@ -884,6 +926,8 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
                     await update.message.reply_text(
                         f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen."
                     )
+        tasks_list_label = list_name or "Tasks"
+        _conv_complete(chat_id, f"Tasks {mode} ({tasks_list_label})")
 
     elif intent == "weather":
         period = params.get("period", "today")
@@ -898,11 +942,13 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         await update.message.reply_text(
             f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
         )
+        _conv_complete(chat_id, f"Wetter {period_label} angezeigt")
 
     elif intent == "briefing":
         await update.message.reply_text("⏳ Briefing wird erstellt...")
         msg = await build_briefing()
         await update.message.reply_text(msg, parse_mode="Markdown")
+        _conv_complete(chat_id, "Morgenbriefing angezeigt")
 
     elif intent == "memory":
         mode = params.get("mode", "list")
@@ -915,6 +961,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         else:
             msg = await _memory_agent.list_memories()
         await update.message.reply_text(msg, parse_mode="Markdown")
+        _conv_complete(chat_id, f"Erinnerungen {mode}")
 
     else:
         personal_system = (
@@ -949,6 +996,9 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             await typing_task
         if _memory_agent:
             asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+
+    if answer and not answer.startswith("Fehler:"):
+        _conv_complete(chat_id, answer[:180])
 
     if (
         _conversation_db
@@ -1194,6 +1244,81 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_mail_action_confirm(chat_id, mail, mode, params)
 
 
+_GITHUB_REPO_PATHS: dict[str, str] = {
+    "herrlich-ai-platform": "/root/agents",
+    "immo-radar": "/opt/immo-radar",
+    "refurbish-business": "/opt/refurbish-business",
+    "cv-project": "/opt/cv-project",
+}
+
+
+@app.post("/webhook/github")
+async def github_webhook(request: Request):
+    body = await request.body()
+
+    webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        expected = (
+            "sha256="
+            + hmac.new(webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+        )
+        if not hmac.compare_digest(sig_header, expected):
+            raise HTTPException(status_code=403, detail="Invalid signature")
+
+    event_type = request.headers.get("X-GitHub-Event", "")
+    if event_type != "push":
+        return {"ok": True, "skipped": "not a push event"}
+
+    try:
+        data = json.loads(body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    ref = data.get("ref", "")
+    repo_name = data.get("repository", {}).get("name", "")
+
+    if ref not in ("refs/heads/main", "refs/heads/master"):
+        return {"ok": True, "skipped": f"branch {ref} ignored"}
+
+    repo_path = _GITHUB_REPO_PATHS.get(repo_name)
+    if not repo_path or not os.path.isdir(repo_path):
+        return {"ok": True, "skipped": f"repo {repo_name!r} not configured"}
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "pull", "--ff-only"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        success = result.returncode == 0
+        output = (result.stdout + result.stderr).strip()[:300]
+    except Exception as e:
+        success = False
+        output = str(e)
+
+    chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if chat_id_str:
+        try:
+            bot = Bot(token=TELEGRAM_TOKEN)
+            status = "✅" if success else "❌"
+            already_up = "already up to date" in output.lower()
+            if not already_up:
+                await bot.send_message(
+                    chat_id=int(chat_id_str),
+                    text=f"{status} GitHub Push: *{repo_name}*\n`{output}`",
+                    parse_mode="Markdown",
+                )
+        except Exception:
+            pass
+
+    logger.info(
+        f"GitHub webhook: {repo_name} pull {'ok' if success else 'failed'}: {output}"
+    )
+    return {"ok": True, "repo": repo_name, "pulled": success, "output": output}
+
+
 @app.on_event("startup")
 async def startup():
     from coding_agent import _ensure_init
@@ -1243,8 +1368,9 @@ async def startup():
     try:
         from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
+        _jarvis_dir = os.environ.get("JARVIS_DATA_DIR", "/root/.jarvis")
         _scheduler.add_jobstore(
-            SQLAlchemyJobStore(url="sqlite:////root/.jarvis/jarvis_jobs.db"), "default"
+            SQLAlchemyJobStore(url=f"sqlite:///{_jarvis_dir}/jarvis_jobs.db"), "default"
         )
         logger.info("APScheduler SQLite-Jobstore konfiguriert")
     except Exception as e:

@@ -4,11 +4,17 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+_JARVIS_DIR = os.environ.get("JARVIS_DATA_DIR", "/root/.jarvis")
+
+
+def _db(filename: str) -> str:
+    return os.path.join(_JARVIS_DIR, filename)
+
 
 class SessionDB:
-    def __init__(self, path: str = "/root/.jarvis/sessions.db"):
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def __init__(self, path: str | None = None):
+        self.path = path or _db("sessions.db")
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:
@@ -57,9 +63,9 @@ class SessionDB:
 
 
 class MemoryDB:
-    def __init__(self, path: str = "/root/.jarvis/memories.db"):
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def __init__(self, path: str | None = None):
+        self.path = path or _db("memories.db")
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:
@@ -150,9 +156,9 @@ class MemoryDB:
 
 
 class ConversationDB:
-    def __init__(self, path: str = "/root/.jarvis/conversations.db"):
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def __init__(self, path: str | None = None):
+        self.path = path or _db("conversations.db")
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:
@@ -195,9 +201,9 @@ class ConversationDB:
 
 
 class ProactiveDB:
-    def __init__(self, path: str = "/root/.jarvis/proactive.db"):
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def __init__(self, path: str | None = None):
+        self.path = path or _db("proactive.db")
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     async def init(self):
         async with aiosqlite.connect(self.path) as db:

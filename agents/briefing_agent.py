@@ -21,6 +21,12 @@ logger = logging.getLogger("jarvis.briefing")
 
 _calendar = CalendarAgent()
 
+
+def _escape_md(text: str) -> str:
+    """Strip characters that break Telegram Markdown V1 from user-generated content."""
+    return text.replace("*", "").replace("_", "").replace("`", "").replace("[", "(")
+
+
 _WEEKDAYS = [
     "Montag",
     "Dienstag",
@@ -45,7 +51,7 @@ def _get_calendar_today() -> str:
         lines = []
         for ev in events:
             time_str = "ganztägig" if ev.all_day else ev.start.strftime("%H:%M")
-            lines.append(f"• {time_str} {ev.title}")
+            lines.append(f"• {time_str} {_escape_md(ev.title)}")
         return "\n".join(lines)
     except Exception as e:
         logger.warning(f"Kalender-Fehler: {e}")
@@ -60,8 +66,8 @@ def _get_mail_unread() -> str:
             return ""
         lines = []
         for m in mails[:5]:
-            sender = (m.sender_name or m.sender_email or "?")[:30]
-            subject = m.subject[:60]
+            sender = _escape_md((m.sender_name or m.sender_email or "?")[:30])
+            subject = _escape_md(m.subject[:60])
             time_str = m.received.astimezone(BERLIN).strftime("%H:%M")
             lines.append(f'• {sender}: "{subject}" — {time_str}')
         return "\n".join(lines)
