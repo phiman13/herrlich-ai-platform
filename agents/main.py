@@ -1303,20 +1303,49 @@ async def github_webhook(request: Request):
 
     try:
         # fetch + reset --hard statt pull --ff-only: blockiert nicht bei lokalen Änderungen
+        git_path = repo_cfg["git_path"]
         subprocess.run(
-            ["git", "-C", repo_cfg["git_path"], "fetch", "origin"],
+            ["git", "-C", git_path, "fetch", "origin"],
             capture_output=True,
             timeout=30,
         )
         branch = "main"
         result = subprocess.run(
-            ["git", "-C", repo_cfg["git_path"], "reset", "--hard", f"origin/{branch}"],
+            ["git", "-C", git_path, "reset", "--hard", f"origin/{branch}"],
             capture_output=True,
             text=True,
             timeout=30,
         )
         success = result.returncode == 0
         output = (result.stdout + result.stderr).strip()[:300]
+
+        # Fallback: Dateien mit falscher UID (z.B. 501 von root-rsync) blockieren jarvis.
+        # Sudoers erlaubt jarvis sudo git für alle konfigurierten Repos → root kann alles überschreiben.
+        if not success and "Permission denied" in output:
+            logger.warning(
+                "GitHub webhook: %s reset permission denied, retry as root", repo_name
+            )
+            subprocess.run(
+                ["sudo", "/usr/bin/git", "-C", git_path, "fetch", "origin"],
+                capture_output=True,
+                timeout=30,
+            )
+            result = subprocess.run(
+                [
+                    "sudo",
+                    "/usr/bin/git",
+                    "-C",
+                    git_path,
+                    "reset",
+                    "--hard",
+                    f"origin/{branch}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            success = result.returncode == 0
+            output = (result.stdout + result.stderr).strip()[:300]
     except Exception as e:
         success = False
         output = str(e)
