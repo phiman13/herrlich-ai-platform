@@ -11,12 +11,20 @@ try:
     from calendar_agent import CalendarAgent, BERLIN
     from db import ProactiveDB, MemoryDB
     from mail_agent import MailAgent
-    from tasks_agent import get_tasks_raw, get_completed_tasks_this_week
+    from tasks_agent import (
+        get_tasks_raw,
+        get_completed_tasks_this_week,
+        _is_system_task,
+    )
 except ImportError:
     from agents.calendar_agent import CalendarAgent, BERLIN
     from agents.db import ProactiveDB, MemoryDB
     from agents.mail_agent import MailAgent
-    from agents.tasks_agent import get_tasks_raw, get_completed_tasks_this_week
+    from agents.tasks_agent import (
+        get_tasks_raw,
+        get_completed_tasks_this_week,
+        _is_system_task,
+    )
 
 logger = logging.getLogger("jarvis.proactive")
 
@@ -142,6 +150,8 @@ async def send_task_reminder(chat_id: int) -> None:
     try:
         reminders = await asyncio.to_thread(CalendarAgent().get_all_reminders)
         for r in reminders:
+            if _is_system_task(r.get("title", "")):
+                continue
             created = r.get("created")
             if created is None:
                 continue
