@@ -95,22 +95,20 @@ def test_send_task_reminder_pings_overdue_task(tmp_path):
     asyncio.run(memory_db.init())
     init_proactive(proactive_db, memory_db)
 
-    overdue_reminder = {
-        "uid": "apple_test_uid",
+    overdue_todo = {
+        "id": "todo_test_uid",
         "title": "Zahnarzt anrufen",
-        "created": datetime.now(timezone.utc) - timedelta(days=3),
-        "due": None,
+        "list_name": "Tasks",
+        "created_at": (datetime.now(timezone.utc) - timedelta(days=3)).isoformat(),
     }
 
     mock_bot = MagicMock()
     mock_bot.send_message = AsyncMock()
 
     with (
-        patch("proactive_agent.CalendarAgent") as MockCal,
-        patch("proactive_agent.get_tasks_raw", return_value=[]),
+        patch("proactive_agent.get_tasks_raw", return_value=[overdue_todo]),
         patch("proactive_agent.Bot", return_value=mock_bot),
     ):
-        MockCal.return_value.get_all_reminders.return_value = [overdue_reminder]
         asyncio.run(send_task_reminder(123))
 
     mock_bot.send_message.assert_called_once()

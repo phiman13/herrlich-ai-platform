@@ -11,20 +11,12 @@ try:
     from calendar_agent import CalendarAgent, BERLIN
     from db import ProactiveDB, MemoryDB
     from mail_agent import MailAgent
-    from tasks_agent import (
-        get_tasks_raw,
-        get_completed_tasks_this_week,
-        _is_system_task,
-    )
+    from tasks_agent import get_tasks_raw, get_completed_tasks_this_week
 except ImportError:
     from agents.calendar_agent import CalendarAgent, BERLIN
     from agents.db import ProactiveDB, MemoryDB
     from agents.mail_agent import MailAgent
-    from agents.tasks_agent import (
-        get_tasks_raw,
-        get_completed_tasks_this_week,
-        _is_system_task,
-    )
+    from agents.tasks_agent import get_tasks_raw, get_completed_tasks_this_week
 
 logger = logging.getLogger("jarvis.proactive")
 
@@ -142,29 +134,10 @@ async def check_important_mails(chat_id: int) -> None:
 
 
 async def send_task_reminder(chat_id: int) -> None:
-    """Check for tasks open > 2 days and not reminded in last 2 days. Send reminder if found."""
+    """Check for MS To Do tasks open > 2 days and not reminded in last 2 days."""
     now = datetime.now(timezone.utc)
     two_days_ago = now - timedelta(days=2)
     overdue = []
-
-    try:
-        reminders = await asyncio.to_thread(CalendarAgent().get_all_reminders)
-        for r in reminders:
-            if _is_system_task(r.get("title", "")):
-                continue
-            created = r.get("created")
-            if created is None:
-                continue
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            if created > two_days_ago:
-                continue
-            last = await _proactive_db.get_last_reminded(r["uid"])
-            if last and (now - last) < timedelta(days=2):
-                continue
-            overdue.append(r)
-    except Exception as e:
-        logger.warning("Apple Reminders fetch failed: %s", e)
 
     try:
         todos = await asyncio.to_thread(get_tasks_raw)
@@ -189,8 +162,7 @@ async def send_task_reminder(chat_id: int) -> None:
 
     lines = [f"⏰ *{len(overdue)} überfällige Tasks:*\n"]
     for t in overdue:
-        icon = "📝" if t["uid"].startswith("apple_") else "✅"
-        lines.append(f"{icon} {t['title']}")
+        lines.append(f"✅ {t['title']}")
 
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
     await bot.send_message(
@@ -222,14 +194,6 @@ async def send_weekly_review(chat_id: int) -> None:
         this_week_events = []
 
     try:
-        completed_reminders = await asyncio.to_thread(
-            cal.get_completed_reminders_this_week
-        )
-    except Exception as e:
-        logger.warning("completed_reminders failed: %s", e)
-        completed_reminders = []
-
-    try:
         completed_todos = await asyncio.to_thread(get_completed_tasks_this_week)
     except Exception as e:
         logger.warning("completed_todos failed: %s", e)
@@ -246,12 +210,6 @@ async def send_weekly_review(chat_id: int) -> None:
         next_week_events = []
 
     try:
-        open_reminders = await asyncio.to_thread(cal.get_all_reminders)
-    except Exception as e:
-        logger.warning("open_reminders failed: %s", e)
-        open_reminders = []
-
-    try:
         open_todos = await asyncio.to_thread(get_tasks_raw)
     except Exception as e:
         logger.warning("open_todos failed: %s", e)
@@ -260,14 +218,12 @@ async def send_weekly_review(chat_id: int) -> None:
     rueckblick = (
         f"DIESE WOCHE (Rückblick):\n"
         f"Termine: {chr(10).join(fmt_event(e) for e in this_week_events) or 'keine'}\n"
-        f"Erledigte Apple Reminders: {', '.join(completed_reminders) or 'keine'}\n"
         f"Erledigte MS To Do: {', '.join(completed_todos) or 'keine'}\n"
         f"Neue Erkenntnisse (Memory): {', '.join(m['content'] for m in memories) or 'keine'}"
     )
     vorausschau = (
         f"NÄCHSTE WOCHE (Vorausschau):\n"
         f"Termine: {chr(10).join(fmt_event(e) for e in next_week_events) or 'keine'}\n"
-        f"Offene Reminders: {', '.join(r['title'] for r in open_reminders) or 'keine'}\n"
         f"Offene MS To Do: {', '.join(t['title'] for t in open_todos) or 'keine'}"
     )
 
