@@ -1321,7 +1321,9 @@ async def github_webhook(request: Request):
 
         # Fallback: Dateien mit falscher UID (z.B. 501 von root-rsync) blockieren jarvis.
         # Sudoers erlaubt jarvis sudo git für alle konfigurierten Repos → root kann alles überschreiben.
-        if not success and "Permission denied" in output:
+        if not success and (
+            "Permission denied" in output or "dubious ownership" in output
+        ):
             logger.warning(
                 "GitHub webhook: %s reset permission denied, retry as root", repo_name
             )
