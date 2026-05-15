@@ -3,10 +3,11 @@
     "allow": [
       "Read(/Users/philippherrlich/Documents/04_Sonstiges/01_Coding/herrlich-ai-platform/*)",
       "Bash(PYTHONPATH=agents .venv/bin/pytest *)",
-      "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
-      "mcp__plugin_context-mode_context-mode__ctx_execute",
-      "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
-      "mcp__plugin_context-mode_context-mode__ctx_search"
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(ssh root@100.115.184.3 *)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)"
     ]
   },
   "worktree": {
