@@ -85,6 +85,7 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 
 
 _pending_mail_ops: dict[int, dict] = {}
+_pending_calendar_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
 # Conversation history for router context: each entry {"u": user_text, "j": bot_summary}
 _recent_conv: dict[int, list[dict]] = {}
@@ -534,7 +535,6 @@ async def handle_calendar(
     end=None,
     mode="read",
     title=None,
-    calendar_name=None,
 ):
     bot = Bot(token=TELEGRAM_TOKEN)
 
@@ -546,20 +546,26 @@ async def handle_calendar(
             return
         if end is None:
             end = start + timedelta(hours=1)
-        try:
-            await asyncio.to_thread(
-                calendar_agent.create_event, title, start, end, calendar_name
-            )
-            cal_note = f" in '{calendar_name}'" if calendar_name else ""
-            await bot.send_message(
-                chat_id=chat_id,
-                text=f"✅ Termin erstellt{cal_note}: *{title}*\n{start.strftime('%d.%m.%Y %H:%M')} – {end.strftime('%H:%M')}",
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            await bot.send_message(
-                chat_id=chat_id, text=f"❌ Termin konnte nicht erstellt werden: {e}"
-            )
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        _pending_calendar_ops[chat_id] = {"title": title, "start": start, "end": end}
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "✅ Erstellen", callback_data="cal:create:confirm"
+                ),
+                InlineKeyboardButton("❌ Abbrechen", callback_data="cal:create:cancel"),
+            ]
+        ]
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"📅 *Termin erstellen?*\n\n*{title}*\n"
+                f"{start.strftime('%d.%m.%Y %H:%M')} – {end.strftime('%H:%M')}"
+            ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return
 
     if start is None or end is None:
@@ -702,7 +708,6 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         start = datetime.fromisoformat(start_str) if start_str else None
         end = datetime.fromisoformat(end_str) if end_str else None
         title = params.get("title")
-        calendar_name = params.get("calendar_name")
         await handle_calendar(
             chat_id=chat_id,
             text=text,
@@ -711,10 +716,9 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             end=end,
             mode=mode,
             title=title,
-            calendar_name=calendar_name,
         )
         cal_summary = (
-            f"Termin erstellt: {title}"
+            f"Termin-Erstellung angefragt: {title}"
             if mode == "write" and title
             else "Kalender angezeigt"
         )
@@ -1241,6 +1245,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _last_mail_search.pop(chat_id, None)
         await query.edit_message_reply_markup(reply_markup=None)
         await _show_mail_action_confirm(chat_id, mail, mode, params)
+
+    elif data == "cal:create:confirm":
+        chat_id = query.message.chat_id
+        op = _pending_calendar_ops.pop(chat_id, None)
+        if op is None:
+            await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
+            return
+        try:
+            await asyncio.to_thread(
+                calendar_agent.create_event, op["title"], op["start"], op["end"]
+            )
+            await query.edit_message_text(
+                f"✅ Termin erstellt: *{op['title']}*\n"
+                f"{op['start'].strftime('%d.%m.%Y %H:%M')} – "
+                f"{op['end'].strftime('%H:%M')}",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.exception("cal:create:confirm fehlgeschlagen")
+            await query.edit_message_text(
+                f"❌ Termin konnte nicht erstellt werden: {e}"
+            )
+
+    elif data == "cal:create:cancel":
+        chat_id = query.message.chat_id
+        _pending_calendar_ops.pop(chat_id, None)
+        await query.edit_message_text("❌ Abgebrochen.")
 
 
 # git_path: wo git pull läuft
