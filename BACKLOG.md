@@ -1,12 +1,27 @@
 # Jarvis Platform — Backlog
 
-Master-Quelle: dieses File im Repo. Letzter Stand: 10.05.2026 (abends)
+Master-Quelle: dieses File im Repo. Letzter Stand: 16.05.2026
 
 ---
 
 ---
 
 ## P2 — Wichtig, nicht dringend
+
+- [ ] **Migration auf Claude Agent SDK — Abo-Guthaben statt API-Key**
+      Ab 15.06.2026 gibt es ein monatliches Agent-SDK-Guthaben (Max 20× = $200/Monat),
+      das auch eigene Apps abdeckt, die sich per Agent SDK über das Claude-Abo
+      authentifizieren — statt API-Key + Pay-as-you-go.
+      Jarvis ist der beste Kandidat: Single-User, Dauerprozess auf dem VPS, schon agentisch.
+      Umbau: `*_agent.py` + `router.py` vom `anthropic`-SDK (`.messages.create()`)
+      auf das Agent SDK (OAuth-Login statt `ANTHROPIC_API_KEY`).
+      Voraussetzungen: (1) Guthaben im Claude-Account claimen, (2) Extra-Usage aktivieren
+      — sonst harter Stopp statt Pay-as-you-go-Fallback, wenn das Guthaben leer ist.
+      Date-Gate: nicht vor 15.06.2026 scharfschalten; Plan/Vorbereitung vorher möglich.
+      Folge-Phasen (eigene Backlogs): immo-radar + refurbish-business ebenfalls auf
+      Agent SDK — beide Single-User, teilen sich denselben $200-Topf.
+      recipe-app bleibt bewusst auf API-Key (Multi-User, stateless Edge Functions).
+      Aufwand: Planung 1–2 h, Umbau Jarvis ~halber Tag.
 
 - [ ] **Mail: Verschieben in beliebigen Ordner**
       `move`-Op löst aktuell `find_folder_by_name()` auf — ungetestet.
