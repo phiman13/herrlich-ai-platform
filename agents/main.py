@@ -88,6 +88,17 @@ _pending_mail_ops: dict[int, dict] = {}
 _pending_calendar_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
 _last_calendar_search: dict[int, dict] = {}
+
+_PENDING_OP_TTL = (
+    600  # Sekunden — Confirm-Buttons älter als 10 Min gelten als abgelaufen
+)
+
+
+def _pending_op_expired(op: dict) -> bool:
+    """True wenn eine Pending-Op älter als _PENDING_OP_TTL ist."""
+    return time.time() - op.get("staged_at", 0) > _PENDING_OP_TTL
+
+
 # Conversation history for router context: each entry {"u": user_text, "j": bot_summary}
 _recent_conv: dict[int, list[dict]] = {}
 _WRITE_MODES = {
@@ -278,6 +289,7 @@ async def handle_mail(chat_id, text, params):
             "to_email": to_email,
             "subject": subject,
             "body": body,
+            "staged_at": time.time(),
         }
 
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -507,6 +519,7 @@ async def _show_mail_action_confirm(
         "mail_id": mail.id,
         "subject": mail.subject,
         "sender": sender,
+        "staged_at": time.time(),
         **{
             k: params[k]
             for k in ("reply_text", "forward_to", "forward_text", "destination_folder")
@@ -554,6 +567,7 @@ async def handle_calendar(
             "title": title,
             "start": start,
             "end": end,
+            "staged_at": time.time(),
         }
         keyboard = [
             [
@@ -687,6 +701,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
             "type": "delete",
             "event_id": event.id,
             "title": event.title,
+            "staged_at": time.time(),
         }
         text = (
             f"🗑️ *Termin absagen?*\n\n*{title_safe}*\n"
@@ -712,6 +727,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
             "new_end": new_end,
             "new_title": new_title,
             "new_location": new_location,
+            "staged_at": time.time(),
         }
         lines = [f"📅 *Termin ändern?*\n\n*{title_safe}*"]
         if new_start:
@@ -1302,6 +1318,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if draft is None:
             await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
             return
+        if _pending_op_expired(draft):
+            await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
+            return
         from mail_agent import MailAgent
 
         agent = MailAgent()
@@ -1326,6 +1345,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         op = _pending_mail_ops.pop(chat_id, None)
         if op is None:
             await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
+            return
+        if _pending_op_expired(op):
+            await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
             return
         from mail_agent import MailAgent
 
@@ -1408,6 +1430,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         op = _pending_calendar_ops.pop(chat_id, None)
         if op is None:
             await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
+            return
+        if _pending_op_expired(op):
+            await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
             return
         try:
             if op["type"] == "create":
