@@ -281,3 +281,116 @@ def test_mail_action_roundtrip_archive():
         MockAgent.return_value.archive.return_value = True
         asyncio.run(main.handle_callback(update, None))
     MockAgent.return_value.archive.assert_called_once_with("m99")
+
+
+# --- push / dismiss / calendar callback branches (characterization) ---
+
+
+def test_push_triggers_git_push():
+    update = _make_cbq("push:immo-radar")
+    with patch("vps.git_push", new_callable=AsyncMock, return_value=True) as mock_push:
+        asyncio.run(main.handle_callback(update, None))
+    mock_push.assert_awaited_once_with("immo-radar")
+    update.callback_query.message.reply_text.assert_awaited()
+
+
+def test_dismiss_removes_keyboard():
+    update = _make_cbq("dismiss")
+    asyncio.run(main.handle_callback(update, None))
+    update.callback_query.edit_message_reply_markup.assert_awaited_once()
+
+
+def test_cal_action_confirm_create_executes():
+    main._pending_calendar_ops[123] = {
+        "type": "create",
+        "title": "Zahnarzt",
+        "start": datetime(2026, 6, 1, 10, 0),
+        "end": datetime(2026, 6, 1, 11, 0),
+        "staged_at": time.time(),
+    }
+    update = _make_cbq("cal:action:confirm")
+    with patch("agents.main.calendar_agent") as mock_cal:
+        asyncio.run(main.handle_callback(update, None))
+    mock_cal.create_event.assert_called_once()
+    assert "erstellt" in _edited(update)
+
+
+def test_cal_action_confirm_update_executes():
+    main._pending_calendar_ops[123] = {
+        "type": "update",
+        "event_id": "e1",
+        "title": "Zahnarzt",
+        "new_start": datetime(2026, 6, 1, 15, 0),
+        "new_end": datetime(2026, 6, 1, 16, 0),
+        "new_title": None,
+        "new_location": None,
+        "staged_at": time.time(),
+    }
+    update = _make_cbq("cal:action:confirm")
+    with patch("agents.main.calendar_agent") as mock_cal:
+        asyncio.run(main.handle_callback(update, None))
+    mock_cal.update_event.assert_called_once()
+    assert "geändert" in _edited(update)
+
+
+def test_cal_action_confirm_no_op_warns():
+    update = _make_cbq("cal:action:confirm")
+    asyncio.run(main.handle_callback(update, None))
+    assert "Keine ausstehende Aktion" in _edited(update)
+
+
+def test_cal_action_cancel_clears_state():
+    main._pending_calendar_ops[123] = {"type": "create", "staged_at": time.time()}
+    main._last_calendar_search[123] = {"events": [], "timestamp": time.time()}
+    update = _make_cbq("cal:action:cancel")
+    asyncio.run(main.handle_callback(update, None))
+    assert 123 not in main._pending_calendar_ops
+    assert 123 not in main._last_calendar_search
+    assert "Abgebrochen" in _edited(update)
+
+
+def test_cal_select_expired_search_warns():
+    main._last_calendar_search[123] = {
+        "events": [MagicMock()],
+        "mode": "delete",
+        "params": {},
+        "timestamp": time.time() - 300,  # > 180s TTL
+    }
+    update = _make_cbq("cal:select:0")
+    asyncio.run(main.handle_callback(update, None))
+    assert "abgelaufen" in _edited(update).lower()
+
+
+def test_cal_select_picks_event_and_shows_confirm():
+    event = MagicMock()
+    main._last_calendar_search[123] = {
+        "events": [event],
+        "mode": "delete",
+        "params": {},
+        "timestamp": time.time(),
+    }
+    update = _make_cbq("cal:select:0")
+    with patch(
+        "agents.main._show_calendar_action_confirm", new_callable=AsyncMock
+    ) as mock_show:
+        asyncio.run(main.handle_callback(update, None))
+    mock_show.assert_awaited_once()
+    assert mock_show.await_args[0][1] is event
+    assert 123 not in main._last_calendar_search
+
+
+def test_calendar_create_roundtrip():
+    """Stage via handle_calendar write → confirm via handle_callback."""
+    start = datetime(2026, 6, 1, 10, 0)
+    with patch("agents.main.Bot") as MockBot:
+        MockBot.return_value.send_message = AsyncMock()
+        asyncio.run(
+            main.handle_calendar(123, "x", mode="write", title="Zahnarzt", start=start)
+        )
+    assert main._pending_calendar_ops[123]["type"] == "create"
+    assert "staged_at" in main._pending_calendar_ops[123]
+
+    update = _make_cbq("cal:action:confirm")
+    with patch("agents.main.calendar_agent") as mock_cal:
+        asyncio.run(main.handle_callback(update, None))
+    mock_cal.create_event.assert_called_once()
