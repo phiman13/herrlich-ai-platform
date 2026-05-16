@@ -55,8 +55,9 @@ def test_no_secret_skips_validation():
     req = _make_request(body, {"X-GitHub-Event": "push"})
     with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": ""}):
         result = asyncio.run(main.github_webhook(req))
-    # kein 403; unkonfiguriertes Repo wird sauber übersprungen
+    # kein 403 (kein HTTPException) — der Request lief bis zum Repo-Skip durch
     assert result["ok"] is True
+    assert result["skipped"].startswith("repo")
 
 
 def test_valid_signature_processes_push():
