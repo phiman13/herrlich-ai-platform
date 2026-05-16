@@ -49,7 +49,7 @@ agents/
   db.py                 SessionDB, MemoryDB, ConversationDB, ProactiveDB (alle SQLite-async)
   microsoft_auth.py     MSAL OAuth-Flow für MS Graph
   mail_agent.py         MS Graph Mail (MailAgent-Klasse)
-  calendar_agent.py     iCloud CalDAV (lesen + schreiben)
+  calendar_agent.py     Outlook-Kalender via MS Graph (lesen + schreiben)
   tasks_agent.py        MS Graph To-Do
   briefing_agent.py     Morgenbriefing aggregiert
   proactive_agent.py    APScheduler-Jobs
@@ -90,9 +90,6 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 | `MICROSOFT_CLIENT_ID` | ✅ | Azure App Registration Client ID |
 | `MICROSOFT_CLIENT_SECRET` | ✅ | Azure App Registration Client Secret |
 | `OAUTH_LOGIN_SECRET` | ✅ | Schützt `/oauth/microsoft/login` Endpoint |
-| `ICLOUD_USER` | ✅ | Apple-ID E-Mail für CalDAV |
-| `ICLOUD_APP_PASSWORD` | ✅ | Apple App-spezifisches Passwort für CalDAV |
-| `CALENDAR_WHITELIST` | ✅ | Komma-separierte Kalender-Namen, z.B. `Privat,Arbeit` |
 | `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
 | `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
 | `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
@@ -152,10 +149,10 @@ MS Graph REST-Calls via `requests`. Token via `get_access_token()` (MSAL).
 **Hinweis:** MS Graph `/messages/{id}/archive` existiert nicht → stattdessen `move` mit `destinationId: "archive"`
 
 ### calendar_agent.py — CalendarAgent-Klasse
-iCloud CalDAV via `caldav`-Bibliothek. Konfiguriert via `ICLOUD_USER`, `ICLOUD_APP_PASSWORD`, `CALENDAR_WHITELIST`.
+Outlook-Kalender via MS Graph (`httpx`). Auth über `microsoft_auth.get_access_token()`.
 
-Kalender-Schrankenliste: nur Kalender aus `CALENDAR_WHITELIST` werden gelesen/beschrieben.
-Erinnerungen: `/reminders/`-Kalender werden separat behandelt (`get_all_reminders`, `create_reminder`).
+Lesen: `GET /me/calendarView` (Header `Prefer: outlook.timezone="Europe/Berlin"`) — expandiert Serien- und Multi-Day-Termine serverseitig. Schreiben: `POST /me/events`.
+Es wird ausschließlich der Standard-Kalender (`/me/...`) genutzt — keine Kalender-Whitelist, kein `calendar_name`-Parameter.
 
 ### tasks_agent.py
 MS Graph To-Do. Kein eigenes Class-Wrapper — direkte `httpx`-Calls mit Token aus `get_access_token()`.
@@ -184,9 +181,10 @@ Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 →
 ## Pending-State in main.py (Module-Level)
 
 ```python
-_pending_mail_ops: dict[int, dict]    # Mail-Write-Op wartet auf Confirm-Button
-_last_mail_search: dict[int, dict]    # Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
-_recent_conv: dict[int, list]         # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
+_pending_mail_ops: dict[int, dict]      # Mail-Write-Op wartet auf Confirm-Button
+_pending_calendar_ops: dict[int, dict]  # Termin-Erstellung wartet auf Confirm-Button
+_last_mail_search: dict[int, dict]      # Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
+_recent_conv: dict[int, list]           # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
 ```
 
 ---
@@ -200,18 +198,20 @@ _recent_conv: dict[int, list]         # Letzte Konversations-Paare (user + assis
 | `mail:action:confirm` | handle_callback | Pending Write-Op ausführen (archive/delete/move/reply/forward) |
 | `mail:action:cancel` | handle_callback | Pending Write-Op + Suchergebnis verwerfen |
 | `mail:select:{n}` | handle_callback | Mail n aus Multi-Treffer-Liste wählen → Confirm |
+| `cal:create:confirm` | handle_callback | Pending Termin-Erstellung ausführen |
+| `cal:create:cancel` | handle_callback | Pending Termin-Erstellung verwerfen |
 
 ---
 
 ## MS Graph OAuth
 
-**Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared`
+**Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared` · `Calendars.ReadWrite`
 **Authority:** `https://login.microsoftonline.com/consumers` (persönliche MS-Accounts)
 **Token-Cache:** `/var/lib/jarvis/.jarvis/microsoft_tokens.json` (MSAL SerializableTokenCache)
 **Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
 
 Achtung: Nach Scope-Änderung muss Re-Auth durchgeführt werden — MSAL upgraded Token nicht automatisch.
-Kalender läuft über CalDAV (iCloud), nicht über MS Graph.
+Kalender läuft seit der Outlook-Migration über MS Graph (`/me/calendarView`, `/me/events`).
 
 ---
 
@@ -336,7 +336,7 @@ ssh root@100.115.184.3
 ## Stack
 
 Python 3.11 · FastAPI · python-telegram-bot · anthropic SDK · MSAL · APScheduler 3.x
-MS Graph API · iCloud CalDAV · Open-Meteo · Groq Whisper · systemd · Caddy
+MS Graph API · Open-Meteo · Groq Whisper · systemd · Caddy
 
 ---
 
@@ -348,7 +348,8 @@ MS Graph API · iCloud CalDAV · Open-Meteo · Groq Whisper · systemd · Caddy
 - **Memory-Extraktion** läuft async nach jedem personal/work/research Response (nicht blockierend)
 - **MS Graph `/archive`-Endpoint** existiert nicht für persönliche Accounts → wird als `move` mit `destinationId: "archive"` implementiert
 - **Briefing** kann Markdown-Fehler produzieren (unkontrollierte `*`/`_` in News/Kalender) → automatischer Plaintext-Fallback
-- **CalDAV Erinnerungen** — Apple Reminders über CalDAV seit iOS 13 instabil. Neue Erinnerungen gehen in MS To-Do (tasks_agent)
+- **Erinnerungen** — laufen vollständig über MS To Do (`tasks_agent`, Intent `reminder_write`); kein Apple/CalDAV-Pfad mehr
+- **Kalender-Schreibaktionen** — zeigen seit der Outlook-Migration einen Confirm-Dialog (Callbacks `cal:create:*`), analog zu Mail-Write
 - **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
 - **`.venv`** liegt im Projekt-Root — auf VPS ist es `/opt/jarvis/venv/`
 - **VPS-Code** unter `/opt/herrlich-ai-platform/` (git clone), rsync synchronisiert `agents/` → `/opt/jarvis/` nach jedem Pull; systemd liest Secrets aus `/var/lib/jarvis/.env`
