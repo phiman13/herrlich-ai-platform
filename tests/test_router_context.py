@@ -57,7 +57,7 @@ async def test_build_system_prompt_includes_outlook_calendar_and_mail():
 @pytest.mark.asyncio
 async def test_low_confidence_triggers_clarification():
     """handle_message sends clarification when confidence < 5."""
-    import agents.main as main_mod
+    import dispatch as main_mod
 
     low_confidence_result = {
         "intent": "personal",
@@ -74,7 +74,7 @@ async def test_low_confidence_triggers_clarification():
 
     with (
         patch(
-            "agents.main.route_with_llm",
+            "dispatch.route_with_llm",
             new_callable=AsyncMock,
             return_value=low_confidence_result,
         ),

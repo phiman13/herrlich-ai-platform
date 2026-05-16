@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
-import agents.main as main_module
+import dispatch as main_module
 import app_state
 
 
@@ -35,7 +35,7 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
         with patch(
-            "agents.main.route_with_llm",
+            "dispatch.route_with_llm",
             return_value={
                 "intent": "personal",
                 "confidence": 8,
@@ -46,7 +46,7 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
             with patch(
                 "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
             ):
-                with patch("agents.main.send_typing", new_callable=AsyncMock):
+                with patch("dispatch.send_typing", new_callable=AsyncMock):
                     update = MagicMock()
                     update.update_id = 99991
                     update.message.text = "Wie geht's dir?"
@@ -67,7 +67,7 @@ def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
         with patch(
-            "agents.main.route_with_llm",
+            "dispatch.route_with_llm",
             return_value={
                 "intent": "calendar",
                 "confidence": 9,
@@ -103,7 +103,7 @@ def test_memory_list_intent_handler(fresh_memory_agent):
     )
 
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "memory",
             "confidence": 9,
@@ -134,7 +134,7 @@ def test_memory_delete_intent_handler(fresh_memory_agent):
     )
 
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "memory",
             "confidence": 9,

@@ -272,7 +272,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
 
 
 async def handle_calendar_intent(chat_id: int, text: str, params: dict) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     mode = params.get("mode", "read")
     if mode in ("update", "delete"):

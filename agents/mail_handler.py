@@ -300,7 +300,7 @@ async def _show_mail_action_confirm(
 
 
 async def handle_mail_intent(chat_id: int, text: str, params: dict) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     await handle_mail(chat_id=chat_id, text=text, params=params)
     mail_mode = params.get("mode", "")

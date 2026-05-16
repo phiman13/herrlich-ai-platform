@@ -51,7 +51,7 @@ async def ask_claude(
 async def handle_research(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from main import _keep_typing
+    from dispatch import _keep_typing
 
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
@@ -78,7 +78,7 @@ async def handle_research(
 async def handle_work(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from main import _keep_typing
+    from dispatch import _keep_typing
 
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
@@ -103,7 +103,7 @@ async def handle_work(
 async def handle_personal(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from main import _keep_typing
+    from dispatch import _keep_typing
 
     personal_system = (
         "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"

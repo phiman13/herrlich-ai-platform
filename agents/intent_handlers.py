@@ -44,7 +44,7 @@ async def send_briefing():
 
 
 async def handle_coding(chat_id: int, text: str, params: dict, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     mode = params.get("mode", "action")
     project = params.get("project")
@@ -80,7 +80,7 @@ async def handle_coding(chat_id: int, text: str, params: dict, update) -> None:
 
 
 async def handle_reminder_write(chat_id: int, params: dict, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     title = params.get("title", "")
     due_date_str = params.get("due_date")
@@ -117,7 +117,7 @@ async def handle_reminder_write(chat_id: int, params: dict, update) -> None:
 
 
 async def handle_news(chat_id: int, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     await update.message.reply_text("📰 Lade AI-News...")
     news = await asyncio.to_thread(get_ai_news, 48, 10)
@@ -129,7 +129,7 @@ async def handle_news(chat_id: int, update) -> None:
 
 
 async def handle_tasks(chat_id: int, params: dict, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     mode = params.get("mode", "read")
     list_name = params.get("list_name")
@@ -212,7 +212,7 @@ async def handle_tasks(chat_id: int, params: dict, update) -> None:
 
 
 async def handle_weather(chat_id: int, params: dict, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     period = params.get("period", "today")
     time_of_day = params.get("time_of_day")
@@ -230,7 +230,7 @@ async def handle_weather(chat_id: int, params: dict, update) -> None:
 
 
 async def handle_briefing(chat_id: int, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     await update.message.reply_text("⏳ Briefing wird erstellt...")
     msg = await build_briefing()
@@ -239,7 +239,7 @@ async def handle_briefing(chat_id: int, update) -> None:
 
 
 async def handle_memory(chat_id: int, params: dict, update) -> None:
-    from main import _conv_complete
+    from dispatch import _conv_complete
 
     mode = params.get("mode", "list")
     query = params.get("query")

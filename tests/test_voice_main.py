@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import agents.main as main_module
+import dispatch as main_module
 import app_state
 
 
@@ -18,11 +18,11 @@ def test_handle_voice_transcribes_and_calls_process_text():
 
     with (
         patch(
-            "agents.main.transcribe",
+            "dispatch.transcribe",
             new_callable=AsyncMock,
             return_value="Was kostet Bitcoin?",
         ) as mock_transcribe,
-        patch("agents.main._process_text", new_callable=AsyncMock) as mock_process,
+        patch("dispatch._process_text", new_callable=AsyncMock) as mock_process,
     ):
         asyncio.run(main_module.handle_voice(mock_update, None))
 
@@ -43,7 +43,7 @@ def test_handle_voice_sends_error_on_transcription_failure():
     mock_update.message.reply_text = AsyncMock()
 
     with patch(
-        "agents.main.transcribe",
+        "dispatch.transcribe",
         new_callable=AsyncMock,
         side_effect=RuntimeError("Leeres Transkript"),
     ):
@@ -67,9 +67,9 @@ def test_handle_voice_deduplicates():
 
     with (
         patch(
-            "agents.main.transcribe", new_callable=AsyncMock, return_value="Text"
+            "dispatch.transcribe", new_callable=AsyncMock, return_value="Text"
         ) as mock_transcribe,
-        patch("agents.main._process_text", new_callable=AsyncMock) as mock_process,
+        patch("dispatch._process_text", new_callable=AsyncMock) as mock_process,
     ):
         asyncio.run(main_module.handle_voice(mock_update, None))
         asyncio.run(main_module.handle_voice(mock_update, None))

@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import agents.main as main_module
+import dispatch as main_module
 import chat_handler
 import app_state
 
@@ -10,7 +10,7 @@ def test_send_typing_calls_send_chat_action():
     mock_bot = MagicMock()
     mock_bot.send_chat_action = AsyncMock()
 
-    with patch("agents.main.Bot", return_value=mock_bot):
+    with patch("dispatch.Bot", return_value=mock_bot):
         asyncio.run(main_module.send_typing(chat_id=123))
 
     mock_bot.send_chat_action.assert_called_once()
@@ -27,7 +27,7 @@ def test_keep_typing_stops_on_event():
 
     async def run():
         stop = asyncio.Event()
-        with patch("agents.main.Bot", return_value=mock_bot):
+        with patch("dispatch.Bot", return_value=mock_bot):
             task = asyncio.create_task(main_module._keep_typing(123, stop))
             await asyncio.sleep(0.05)
             stop.set()
@@ -40,7 +40,7 @@ def test_keep_typing_stops_on_event():
 
 def test_personal_intent_uses_sonnet():
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "personal",
             "confidence": 9,
@@ -51,7 +51,7 @@ def test_personal_intent_uses_sonnet():
         with patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
-            with patch("agents.main.send_typing", new_callable=AsyncMock):
+            with patch("dispatch.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 77771
                 update.message.text = "Hallo"
@@ -104,7 +104,7 @@ def test_history_saved_after_personal_intent():
     app_state.conversation_db = mock_db
 
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "personal",
             "confidence": 9,
@@ -117,7 +117,7 @@ def test_history_saved_after_personal_intent():
             new_callable=AsyncMock,
             return_value="Antwort auf Hallo",
         ):
-            with patch("agents.main.send_typing", new_callable=AsyncMock):
+            with patch("dispatch.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 77772
                 update.message.text = "Hallo"
@@ -139,7 +139,7 @@ def test_history_not_saved_for_calendar_intent():
     app_state.conversation_db = mock_db
 
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "calendar",
             "confidence": 9,
@@ -175,7 +175,7 @@ def test_profile_content_injected_for_personal_intent():
     app_state.profile_agent = mock_profile
 
     with patch(
-        "agents.main.route_with_llm",
+        "dispatch.route_with_llm",
         return_value={
             "intent": "personal",
             "confidence": 9,
@@ -186,7 +186,7 @@ def test_profile_content_injected_for_personal_intent():
         with patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
-            with patch("agents.main.send_typing", new_callable=AsyncMock):
+            with patch("dispatch.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 88881
                 update.message.text = "Was soll ich tun?"
