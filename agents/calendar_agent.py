@@ -162,3 +162,61 @@ class CalendarAgent:
         )
         resp.raise_for_status()
         logger.info("Termin erstellt: '%s' (%s)", title, start_dt.isoformat())
+
+    def search_events(self, query: str, start: datetime, end: datetime) -> list[Event]:
+        """Return events in [start, end] whose title matches `query`.
+
+        Match rule: every word in `query` with length >= 3 must appear as a
+        case-insensitive substring of the title. If `query` has no such word,
+        the whole (stripped, lowercased) query must be a substring.
+        """
+        events = self.get_events(start, end)
+        words = [w for w in query.lower().split() if len(w) >= 3]
+        if not words:
+            words = [query.lower().strip()]
+        return [ev for ev in events if all(w in ev.title.lower() for w in words)]
+
+    def update_event(
+        self,
+        event_id: str,
+        new_start: Optional[datetime] = None,
+        new_end: Optional[datetime] = None,
+        new_title: Optional[str] = None,
+        new_location: Optional[str] = None,
+    ) -> None:
+        """Patch an event — only the provided fields change. Raises on failure."""
+        body: dict = {}
+        if new_title is not None:
+            body["subject"] = new_title
+        if new_start is not None:
+            body["start"] = {
+                "dateTime": _to_berlin(new_start).strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "Europe/Berlin",
+            }
+        if new_end is not None:
+            body["end"] = {
+                "dateTime": _to_berlin(new_end).strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "Europe/Berlin",
+            }
+        if new_location is not None:
+            body["location"] = {"displayName": new_location}
+        if not body:
+            raise ValueError("update_event: keine Änderung angegeben")
+        resp = httpx.patch(
+            f"{_GRAPH}/me/events/{event_id}",
+            headers=self._headers(),
+            json=body,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        logger.info("Termin geändert: %s", event_id)
+
+    def delete_event(self, event_id: str) -> None:
+        """Delete an event. Raises on failure."""
+        resp = httpx.delete(
+            f"{_GRAPH}/me/events/{event_id}",
+            headers=self._headers(),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        logger.info("Termin abgesagt: %s", event_id)
