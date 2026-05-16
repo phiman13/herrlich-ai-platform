@@ -82,7 +82,7 @@ def test_news_intent_calls_get_ai_news():
             new_callable=AsyncMock,
             return_value=_route("news"),
         ),
-        patch("agents.main.get_ai_news", return_value="news text") as mock_news,
+        patch("intent_handlers.get_ai_news", return_value="news text") as mock_news,
     ):
         asyncio.run(main.handle_message(_make_update("Was gibt es Neues in AI?"), None))
     mock_news.assert_called_once()
@@ -95,7 +95,7 @@ def test_weather_intent_calls_get_weather():
             new_callable=AsyncMock,
             return_value=_route("weather", {"period": "today"}),
         ),
-        patch("agents.main.get_weather", return_value="sonnig") as mock_weather,
+        patch("intent_handlers.get_weather", return_value="sonnig") as mock_weather,
     ):
         asyncio.run(main.handle_message(_make_update("Wie wird das Wetter?"), None))
     mock_weather.assert_called_once()
@@ -109,7 +109,7 @@ def test_briefing_intent_calls_build_briefing():
             return_value=_route("briefing"),
         ),
         patch(
-            "agents.main.build_briefing",
+            "intent_handlers.build_briefing",
             new_callable=AsyncMock,
             return_value="briefing",
         ) as mock_b,
@@ -125,7 +125,7 @@ def test_tasks_read_intent_calls_get_tasks():
             new_callable=AsyncMock,
             return_value=_route("tasks", {"mode": "read"}),
         ),
-        patch("agents.main.get_tasks", return_value="• task") as mock_tasks,
+        patch("intent_handlers.get_tasks", return_value="• task") as mock_tasks,
     ):
         asyncio.run(main.handle_message(_make_update("Zeig meine Tasks"), None))
     mock_tasks.assert_called_once()
@@ -138,7 +138,7 @@ def test_reminder_write_intent_calls_add_task():
             new_callable=AsyncMock,
             return_value=_route("reminder_write", {"title": "Anruf", "due_date": None}),
         ),
-        patch("agents.main.add_task", return_value=True) as mock_add,
+        patch("intent_handlers.add_task", return_value=True) as mock_add,
     ):
         asyncio.run(
             main.handle_message(_make_update("Erinnere mich an den Anruf"), None)
@@ -157,7 +157,7 @@ def test_coding_query_intent_calls_handle_coding_query():
             ),
         ),
         patch(
-            "agents.main.handle_coding_query",
+            "intent_handlers.handle_coding_query",
             new_callable=AsyncMock,
             return_value="backlog",
         ) as mock_q,
