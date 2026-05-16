@@ -149,8 +149,8 @@ MS Graph REST-Calls via `requests`. Token via `get_access_token()` (MSAL).
 ### calendar_agent.py — CalendarAgent-Klasse
 Outlook-Kalender via MS Graph (`httpx`). Auth über `microsoft_auth.get_access_token()`.
 
-Lesen: `GET /me/calendarView` (Header `Prefer: outlook.timezone="Europe/Berlin"`) — expandiert Serien- und Multi-Day-Termine serverseitig. Schreiben: `POST /me/events`.
-Es wird ausschließlich der Standard-Kalender (`/me/...`) genutzt — keine Kalender-Whitelist, kein `calendar_name`-Parameter.
+Lesen: `GET /me/calendarView` (Header `Prefer: outlook.timezone="Europe/Berlin"`) — expandiert Serien- und Multi-Day-Termine serverseitig. Anlegen: `POST /me/events` (`create_event`). Ändern: `PATCH /me/events/{id}` (`update_event`). Absagen: `DELETE /me/events/{id}` (`delete_event`). Termin-Suche: `search_events(query, start, end)` — Substring-Match auf den Titel.
+Es wird ausschließlich der Standard-Kalender (`/me/...`) genutzt — keine Kalender-Whitelist, kein `calendar_name`-Parameter. Änderungen an Serienterminen betreffen nur das einzelne Vorkommen.
 
 ### tasks_agent.py
 MS Graph To-Do. Kein eigenes Class-Wrapper — direkte `httpx`-Calls mit Token aus `get_access_token()`.
@@ -179,10 +179,11 @@ Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 →
 ## Pending-State in main.py (Module-Level)
 
 ```python
-_pending_mail_ops: dict[int, dict]      # Mail-Write-Op wartet auf Confirm-Button
-_pending_calendar_ops: dict[int, dict]  # Termin-Erstellung wartet auf Confirm-Button
-_last_mail_search: dict[int, dict]      # Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
-_recent_conv: dict[int, list]           # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
+_pending_mail_ops: dict[int, dict]       # Mail-Write-Op wartet auf Confirm-Button
+_pending_calendar_ops: dict[int, dict]   # Kalender-Aktion (create/update/delete) wartet auf Confirm-Button
+_last_mail_search: dict[int, dict]       # Mail-Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
+_last_calendar_search: dict[int, dict]   # Termin-Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
+_recent_conv: dict[int, list]            # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
 ```
 
 ---
@@ -196,8 +197,9 @@ _recent_conv: dict[int, list]           # Letzte Konversations-Paare (user + ass
 | `mail:action:confirm` | handle_callback | Pending Write-Op ausführen (archive/delete/move/reply/forward) |
 | `mail:action:cancel` | handle_callback | Pending Write-Op + Suchergebnis verwerfen |
 | `mail:select:{n}` | handle_callback | Mail n aus Multi-Treffer-Liste wählen → Confirm |
-| `cal:create:confirm` | handle_callback | Pending Termin-Erstellung ausführen |
-| `cal:create:cancel` | handle_callback | Pending Termin-Erstellung verwerfen |
+| `cal:action:confirm` | handle_callback | Pending Kalender-Aktion (Erstellen/Ändern/Absagen) ausführen |
+| `cal:action:cancel` | handle_callback | Pending Kalender-Aktion verwerfen |
+| `cal:select:{n}` | handle_callback | Termin n aus Multi-Treffer-Liste wählen → Confirm |
 
 ---
 
@@ -347,7 +349,7 @@ MS Graph API · Open-Meteo · Groq Whisper · systemd · Caddy
 - **MS Graph `/archive`-Endpoint** existiert nicht für persönliche Accounts → wird als `move` mit `destinationId: "archive"` implementiert
 - **Briefing** kann Markdown-Fehler produzieren (unkontrollierte `*`/`_` in News/Kalender) → automatischer Plaintext-Fallback
 - **Erinnerungen** — laufen vollständig über MS To Do (`tasks_agent`, Intent `reminder_write`); kein Apple/CalDAV-Pfad mehr
-- **Kalender-Schreibaktionen** — zeigen seit der Outlook-Migration einen Confirm-Dialog (Callbacks `cal:create:*`), analog zu Mail-Write
+- **Kalender-Schreibaktionen** — Erstellen, Ändern und Absagen zeigen einen Confirm-Dialog (Callbacks `cal:action:*`); bei mehreren Treffern zuerst Auswahl via `cal:select:{n}`, analog zu Mail-Write
 - **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
 - **`.venv`** liegt im Projekt-Root — auf VPS ist es `/opt/jarvis/venv/`
 - **VPS-Code** unter `/opt/herrlich-ai-platform/` (git clone), rsync synchronisiert `agents/` → `/opt/jarvis/` nach jedem Pull; systemd liest Secrets aus `/var/lib/jarvis/.env`
