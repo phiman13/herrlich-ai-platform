@@ -44,7 +44,16 @@ APScheduler (SQLite Jobstore, restart-safe):
 
 ```
 agents/
-  main.py               Gateway: Webhook, Intent-Dispatch, Callbacks, APScheduler-Setup
+  main.py               FastAPI-App, Routen, startup/shutdown
+  dispatch.py           Telegram-Dispatch: _process_text-Orchestrator + handle_message/voice/start
+  app_state.py          Geteilter State (Pending-Ops, Such-Dicts, lazy Agenten) + TTL-Helper
+  formatting.py         Reine Formatter (Kalender/Mail/Markdown)
+  mail_handler.py       Mail-Intent-Handler (lesen/suchen/schreiben)
+  calendar_handler.py   Kalender-Intent-Handler (lesen/anlegen/ändern/absagen)
+  chat_handler.py       LLM-Chat-Handler (personal/work/research) + ask_claude
+  intent_handlers.py    Schlanke Intent-Handler (coding/tasks/news/weather/briefing/...)
+  callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
+  github_webhook.py     GitHub-Auto-Deploy-Webhook
   router.py             Intent-Routing via Claude Haiku
   db.py                 SessionDB, MemoryDB, ConversationDB, ProactiveDB (alle SQLite-async)
   microsoft_auth.py     MSAL OAuth-Flow für MS Graph
@@ -176,7 +185,7 @@ Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 →
 
 ---
 
-## Pending-State in main.py (Module-Level)
+## Pending-State in app_state.py (Module-Level)
 
 ```python
 _pending_mail_ops: dict[int, dict]       # Mail-Write-Op wartet auf Confirm-Button
@@ -255,7 +264,7 @@ with patch("agents.mail_agent.get_access_token", return_value="tok"), \
 1. **`agents/<name>_agent.py`** — Agenten-Logik implementieren
 2. **`agents/router.py`** — neuen Intent in `_SYSTEM_TEMPLATE` dokumentieren (Beispiele + Parameter)
 3. **`agents/router.py`** — Intent-Name in die Whitelist-Liste im `route_with_llm`-Validator eintragen
-4. **`agents/main.py`** — `elif intent == "<name>":` Block in `_process_text()` hinzufügen
+4. **`agents/dispatch.py`** — `elif intent == "<name>":` Block in `_process_text()` hinzufügen
 5. **`tests/test_<name>.py`** — Unit-Tests (mocked)
 6. **`CLAUDE.md`** — Agenten-Tabelle aktualisieren
 
