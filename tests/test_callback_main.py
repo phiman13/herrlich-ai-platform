@@ -262,6 +262,7 @@ def test_mail_select_picks_mail_and_shows_confirm():
 
 def test_mail_action_roundtrip_archive():
     """Stage via _show_mail_action_confirm → confirm via handle_callback."""
+    import mail_handler
     from zoneinfo import ZoneInfo
 
     mail = MagicMock()
@@ -270,9 +271,9 @@ def test_mail_action_roundtrip_archive():
     mail.sender_name = "Stadtwerke"
     mail.sender_email = "sw@x.de"
     mail.received = datetime(2026, 5, 1, 9, 0, tzinfo=ZoneInfo("Europe/Berlin"))
-    with patch("agents.main.Bot") as MockBot:
+    with patch("mail_handler.Bot") as MockBot:
         MockBot.return_value.send_message = AsyncMock()
-        asyncio.run(main._show_mail_action_confirm(123, mail, "archive", {}))
+        asyncio.run(mail_handler._show_mail_action_confirm(123, mail, "archive", {}))
     assert app_state.pending_mail_ops[123]["type"] == "archive"
     assert app_state.pending_mail_ops[123]["mail_id"] == "m99"
     assert "staged_at" in app_state.pending_mail_ops[123]

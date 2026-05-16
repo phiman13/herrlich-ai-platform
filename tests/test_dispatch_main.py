@@ -35,7 +35,7 @@ def test_mail_intent_dispatches_to_handle_mail():
             new_callable=AsyncMock,
             return_value=_route("mail", {"mode": "quick_scan"}),
         ),
-        patch("agents.main.handle_mail", new_callable=AsyncMock) as mock_mail,
+        patch("agents.main.handle_mail_intent", new_callable=AsyncMock) as mock_mail,
     ):
         asyncio.run(
             main.handle_message(_make_update("Was Wichtiges im Posteingang?"), None)
