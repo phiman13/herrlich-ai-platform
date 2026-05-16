@@ -103,16 +103,26 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    Beispiele:
    - "Was habe ich heute?" → mode=read, kind=today
    - "Erstelle Termin Zahnarzt morgen 10 Uhr" → mode=write
+   - "Verschiebe den Zahnarzttermin auf 15 Uhr" → mode=update, query=Zahnarzt
+   - "Sag den Termin mit Anna morgen ab" → mode=delete, query=Anna
+   - "Ändere den Titel von Meeting zu Strategie-Call" → mode=update, query=Meeting, new_title=Strategie-Call
 
    Parameter:
-   - mode: "read" | "write"
+   - mode: "read" | "write" | "update" | "delete"
    - kind: "today" | "tomorrow" | "week" | "next" | "range" | "specific_day" (nur bei mode=read)
    - start: ISO-8601 datetime oder null
    - end: ISO-8601 datetime oder null (bei mode=write und null → start + 1 Stunde)
    - label: deutsche Beschreibung des Zeitfensters (nur bei mode=read)
    - title: string (Termin-Titel, nur bei mode=write)
+   - query: string (markanter Titel-Ausschnitt des Ziel-Termins, nur bei mode=update/delete)
+   - search_start: ISO-8601 datetime oder null (Beginn Suchfenster, nur bei mode=update/delete)
+   - search_end: ISO-8601 datetime oder null (Ende Suchfenster, nur bei mode=update/delete)
+   - new_start: ISO-8601 datetime oder null (neue Startzeit, nur bei mode=update)
+   - new_end: ISO-8601 datetime oder null (neue Endzeit, nur bei mode=update)
+   - new_title: string oder null (neuer Titel, nur bei mode=update)
+   - new_location: string oder null (neuer Ort, nur bei mode=update)
 
-   WICHTIG: Heute ist {HEUTE_ISO}. Bei mode=read: Berechne start/end relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein. Bei "range" oder "specific_day" MUSS start/end gesetzt sein. Bei mode=write: start MUSS gesetzt sein. end=null bedeutet start+1h.
+   WICHTIG: Heute ist {HEUTE_ISO}. Bei mode=read: Berechne start/end relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein. Bei "range" oder "specific_day" MUSS start/end gesetzt sein. Bei mode=write: start MUSS gesetzt sein. end=null bedeutet start+1h. Bei mode=update/delete: query MUSS gesetzt sein; leite search_start/search_end aus Zeitangaben in der Nachricht ab, sonst null. Bei mode=update MUSS mindestens eines der new_*-Felder gesetzt sein.
 
 2. "coding" — Aufgaben oder Fragen zu Code-Projekten.
    Verfügbare Projekte: {PROJECT_LIST}
