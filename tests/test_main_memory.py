@@ -44,7 +44,7 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
             },
         ):
             with patch(
-                "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+                "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
             ):
                 with patch("agents.main.send_typing", new_callable=AsyncMock):
                     update = MagicMock()

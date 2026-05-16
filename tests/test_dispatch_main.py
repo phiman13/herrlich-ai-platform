@@ -51,7 +51,7 @@ def test_research_intent_calls_ask_claude_with_web_search():
             return_value=_route("research"),
         ),
         patch(
-            "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask,
         patch("agents.main.send_typing", new_callable=AsyncMock),
     ):
@@ -67,7 +67,7 @@ def test_work_intent_uses_sonnet():
             return_value=_route("work"),
         ),
         patch(
-            "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask,
         patch("agents.main.send_typing", new_callable=AsyncMock),
     ):

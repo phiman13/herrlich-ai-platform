@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import agents.main as main_module
+import chat_handler
 import app_state
 
 
@@ -48,7 +49,7 @@ def test_personal_intent_uses_sonnet():
         },
     ):
         with patch(
-            "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
             with patch("agents.main.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
@@ -72,13 +73,13 @@ def test_ask_claude_injects_history():
     mock_response.content = [MagicMock(text="Antwort")]
 
     with (
-        patch("agents.main.claude") as mock_claude,
-        patch("agents.main.Bot") as mock_bot_cls,
+        patch("chat_handler.claude") as mock_claude,
+        patch("chat_handler.Bot") as mock_bot_cls,
     ):
         mock_bot_cls.return_value.send_message = AsyncMock()
         mock_claude.messages.create.return_value = mock_response
         asyncio.run(
-            main_module.ask_claude(
+            chat_handler.ask_claude(
                 chat_id=123,
                 system="system",
                 user="Wie alt ist es?",
@@ -112,7 +113,7 @@ def test_history_saved_after_personal_intent():
         },
     ):
         with patch(
-            "agents.main.ask_claude",
+            "chat_handler.ask_claude",
             new_callable=AsyncMock,
             return_value="Antwort auf Hallo",
         ):
@@ -183,7 +184,7 @@ def test_profile_content_injected_for_personal_intent():
         },
     ):
         with patch(
-            "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
             with patch("agents.main.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
