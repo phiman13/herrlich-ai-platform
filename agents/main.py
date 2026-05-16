@@ -87,6 +87,7 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
 _pending_mail_ops: dict[int, dict] = {}
 _pending_calendar_ops: dict[int, dict] = {}
 _last_mail_search: dict[int, dict] = {}
+_last_calendar_search: dict[int, dict] = {}
 # Conversation history for router context: each entry {"u": user_text, "j": bot_summary}
 _recent_conv: dict[int, list[dict]] = {}
 _WRITE_MODES = {
@@ -548,13 +549,18 @@ async def handle_calendar(
             end = start + timedelta(hours=1)
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-        _pending_calendar_ops[chat_id] = {"title": title, "start": start, "end": end}
+        _pending_calendar_ops[chat_id] = {
+            "type": "create",
+            "title": title,
+            "start": start,
+            "end": end,
+        }
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "✅ Erstellen", callback_data="cal:create:confirm"
+                    "✅ Erstellen", callback_data="cal:action:confirm"
                 ),
-                InlineKeyboardButton("❌ Abbrechen", callback_data="cal:create:cancel"),
+                InlineKeyboardButton("❌ Abbrechen", callback_data="cal:action:cancel"),
             ]
         ]
         await bot.send_message(
@@ -588,6 +594,145 @@ async def handle_calendar(
         await bot.send_message(chat_id=chat_id, text=msg)
     except Exception as e:
         await bot.send_message(chat_id=chat_id, text=f"Kalender-Fehler: {str(e)}")
+
+
+async def handle_calendar_modify(chat_id, mode, params):
+    """Find a target event from a description, then show an update/delete confirm."""
+    bot = Bot(token=TELEGRAM_TOKEN)
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    query = params.get("query")
+    if not query:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Welchen Termin meinst du? Bitte mit einem Stichwort beschreiben.",
+        )
+        return
+
+    if mode == "update" and not any(
+        params.get(k) for k in ("new_start", "new_end", "new_title", "new_location")
+    ):
+        await bot.send_message(
+            chat_id=chat_id, text="Was soll an dem Termin geändert werden?"
+        )
+        return
+
+    now = datetime.now(BERLIN)
+    search_start_str = params.get("search_start")
+    search_end_str = params.get("search_end")
+    search_start = datetime.fromisoformat(search_start_str) if search_start_str else now
+    search_end = (
+        datetime.fromisoformat(search_end_str)
+        if search_end_str
+        else now + timedelta(days=30)
+    )
+
+    events = await asyncio.to_thread(
+        calendar_agent.search_events, query, search_start, search_end
+    )
+    if not events:
+        await bot.send_message(
+            chat_id=chat_id, text=f"Keinen Termin gefunden, der zu '{query}' passt."
+        )
+        return
+    if len(events) > 5:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"Mehr als 5 Treffer für '{query}' — bitte präziser beschreiben.",
+        )
+        return
+    if len(events) == 1:
+        await _show_calendar_action_confirm(chat_id, events[0], mode, params)
+        return
+
+    _last_calendar_search[chat_id] = {
+        "events": events,
+        "mode": mode,
+        "params": params,
+        "timestamp": time.time(),
+    }
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                f"{i + 1}. {ev.title} ({ev.start.strftime('%d.%m. %H:%M')})",
+                callback_data=f"cal:select:{i}",
+            )
+        ]
+        for i, ev in enumerate(events)
+    ]
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"Mehrere Termine passen zu '{query}' — welchen meinst du?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def _show_calendar_action_confirm(chat_id, event, mode, params):
+    """Stage an update/delete op in _pending_calendar_ops and send the confirm dialog."""
+    bot = Bot(token=TELEGRAM_TOKEN)
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    recurring_note = (
+        "\n_(nur dieser Termin — die Serie bleibt)_" if event.recurring else ""
+    )
+
+    if mode == "delete":
+        _pending_calendar_ops[chat_id] = {
+            "type": "delete",
+            "event_id": event.id,
+            "title": event.title,
+        }
+        text = (
+            f"🗑️ *Termin absagen?*\n\n*{event.title}*\n"
+            f"{event.start.strftime('%d.%m.%Y %H:%M')} – "
+            f"{event.end.strftime('%H:%M')}{recurring_note}"
+        )
+        confirm_label = "✅ Absagen"
+    else:  # update
+        new_start_str = params.get("new_start")
+        new_end_str = params.get("new_end")
+        new_start = datetime.fromisoformat(new_start_str) if new_start_str else None
+        new_end = datetime.fromisoformat(new_end_str) if new_end_str else None
+        new_title = params.get("new_title")
+        new_location = params.get("new_location")
+        if new_start and not new_end:
+            new_end = new_start + (event.end - event.start)
+
+        _pending_calendar_ops[chat_id] = {
+            "type": "update",
+            "event_id": event.id,
+            "title": new_title or event.title,
+            "new_start": new_start,
+            "new_end": new_end,
+            "new_title": new_title,
+            "new_location": new_location,
+        }
+        lines = [f"📅 *Termin ändern?*\n\n*{event.title}*"]
+        if new_start:
+            lines.append(
+                f"Zeit: {event.start.strftime('%d.%m. %H:%M')}–"
+                f"{event.end.strftime('%H:%M')} → "
+                f"{new_start.strftime('%d.%m. %H:%M')}–{new_end.strftime('%H:%M')}"
+            )
+        if new_title:
+            lines.append(f"Titel: {event.title} → {new_title}")
+        if new_location:
+            lines.append(f"Ort: {event.location or '—'} → {new_location}")
+        text = "\n".join(lines) + recurring_note
+        confirm_label = "✅ Ändern"
+
+    keyboard = [
+        [
+            InlineKeyboardButton(confirm_label, callback_data="cal:action:confirm"),
+            InlineKeyboardButton("❌ Abbrechen", callback_data="cal:action:cancel"),
+        ]
+    ]
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def ask_claude(
@@ -702,6 +847,10 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     if intent == "calendar":
         mode = params.get("mode", "read")
+        if mode in ("update", "delete"):
+            await handle_calendar_modify(chat_id, mode, params)
+            _conv_complete(chat_id, f"Termin-Aktion ({mode}) angefragt")
+            return
         kind = params.get("kind")
         start_str = params.get("start")
         end_str = params.get("end")
@@ -1246,32 +1395,73 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None)
         await _show_mail_action_confirm(chat_id, mail, mode, params)
 
-    elif data == "cal:create:confirm":
+    elif data == "cal:action:confirm":
         chat_id = query.message.chat_id
         op = _pending_calendar_ops.pop(chat_id, None)
         if op is None:
             await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
             return
         try:
-            await asyncio.to_thread(
-                calendar_agent.create_event, op["title"], op["start"], op["end"]
-            )
-            await query.edit_message_text(
-                f"✅ Termin erstellt: *{op['title']}*\n"
-                f"{op['start'].strftime('%d.%m.%Y %H:%M')} – "
-                f"{op['end'].strftime('%H:%M')}",
-                parse_mode="Markdown",
-            )
+            if op["type"] == "create":
+                await asyncio.to_thread(
+                    calendar_agent.create_event,
+                    op["title"],
+                    op["start"],
+                    op["end"],
+                )
+                msg = (
+                    f"✅ Termin erstellt: *{op['title']}*\n"
+                    f"{op['start'].strftime('%d.%m.%Y %H:%M')} – "
+                    f"{op['end'].strftime('%H:%M')}"
+                )
+            elif op["type"] == "update":
+                await asyncio.to_thread(
+                    calendar_agent.update_event,
+                    op["event_id"],
+                    op["new_start"],
+                    op["new_end"],
+                    op["new_title"],
+                    op["new_location"],
+                )
+                msg = f"✅ Termin geändert: *{op['title']}*"
+            elif op["type"] == "delete":
+                await asyncio.to_thread(calendar_agent.delete_event, op["event_id"])
+                msg = f"✅ Termin abgesagt: *{op['title']}*"
+            else:
+                msg = "❌ Unbekannte Aktion."
+            await query.edit_message_text(msg, parse_mode="Markdown")
         except Exception as e:
-            logger.exception("cal:create:confirm fehlgeschlagen")
-            await query.edit_message_text(
-                f"❌ Termin konnte nicht erstellt werden: {e}"
-            )
+            logger.exception("cal:action:confirm fehlgeschlagen")
+            await query.edit_message_text(f"❌ Aktion fehlgeschlagen: {e}")
 
-    elif data == "cal:create:cancel":
+    elif data == "cal:action:cancel":
         chat_id = query.message.chat_id
         _pending_calendar_ops.pop(chat_id, None)
+        _last_calendar_search.pop(chat_id, None)
         await query.edit_message_text("❌ Abgebrochen.")
+
+    elif data.startswith("cal:select:"):
+        chat_id = query.message.chat_id
+        entry = _last_calendar_search.get(chat_id)
+        if entry is None or (time.time() - entry["timestamp"]) > 180:
+            _last_calendar_search.pop(chat_id, None)
+            await query.edit_message_text("⏱️ Auswahl abgelaufen — bitte nochmal.")
+            return
+        try:
+            idx = int(data.split(":")[-1])
+            events = entry["events"]
+            if idx >= len(events):
+                await query.edit_message_text("❌ Ungültige Auswahl.")
+                return
+        except (ValueError, IndexError):
+            await query.edit_message_text("❌ Ungültige Auswahl.")
+            return
+        event = events[idx]
+        mode = entry["mode"]
+        params = entry["params"]
+        _last_calendar_search.pop(chat_id, None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        await _show_calendar_action_confirm(chat_id, event, mode, params)
 
 
 # git_path: wo git pull läuft
