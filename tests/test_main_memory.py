@@ -82,7 +82,7 @@ def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
                 "reasoning": "test",
             },
         ):
-            with patch("agents.main.handle_calendar", new_callable=AsyncMock):
+            with patch("calendar_handler.handle_calendar", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 99992
                 update.message.text = "Was habe ich heute?"

@@ -153,7 +153,7 @@ def test_history_not_saved_for_calendar_intent():
             "reasoning": "test",
         },
     ):
-        with patch("agents.main.handle_calendar", new_callable=AsyncMock):
+        with patch("calendar_handler.handle_calendar", new_callable=AsyncMock):
             update = MagicMock()
             update.update_id = 77773
             update.message.text = "Was habe ich heute?"
