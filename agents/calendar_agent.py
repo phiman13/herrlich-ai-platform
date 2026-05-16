@@ -1,30 +1,32 @@
 """
 Calendar Agent for Jarvis.
 
-Stage 1: Read-only access to iCloud calendars via CalDAV.
-Architecture is open for additional backends (e.g. Microsoft Graph / Outlook)
-without changing the public API.
+Reads and writes events on the user's default Outlook calendar via
+Microsoft Graph. Auth is shared with the mail/tasks agents through
+microsoft_auth.get_access_token().
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import traceback
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+import httpx
+
+try:
+    from microsoft_auth import get_access_token
+except ImportError:
+    from agents.microsoft_auth import get_access_token  # type: ignore
 
 logger = logging.getLogger("jarvis.calendar")
 
 BERLIN = ZoneInfo("Europe/Berlin")
 UTC = ZoneInfo("UTC")
 
-# Broaden the server-side CalDAV search window backwards so that multi-day
-# events that started before our query window are still returned by iCloud.
-# Python-side overlap filter below narrows it back to the exact window.
-_MULTIDAY_LOOKBACK_DAYS = 30
+_GRAPH = "https://graph.microsoft.com/v1.0"
 
 
 @dataclass
@@ -34,342 +36,125 @@ class Event:
     end: datetime
     location: Optional[str]
     calendar_name: str
-    source: str  # "icloud", later also "outlook"
+    source: str  # "outlook"
     all_day: bool = False
 
 
-def _to_berlin(dt) -> datetime:
-    """Normalize any date/datetime to an aware datetime in Europe/Berlin."""
-    # All-day events come as `date`, not `datetime`
-    if not isinstance(dt, datetime):
-        dt = datetime(dt.year, dt.month, dt.day, tzinfo=BERLIN)
-    elif dt.tzinfo is None:
+def _to_berlin(dt: datetime) -> datetime:
+    """Normalize a naive-or-aware datetime to Europe/Berlin."""
+    if dt.tzinfo is None:
         dt = dt.replace(tzinfo=BERLIN)
     return dt.astimezone(BERLIN)
 
 
-class CalendarBackend:
-    """Abstract backend. Implementations must provide fetch_events()."""
+def _parse_graph_dt(value: dict) -> datetime:
+    """Parse a Graph dateTimeTimeZone object into an aware Berlin datetime.
 
-    name: str = "base"
-
-    def fetch_events(self, start: datetime, end: datetime) -> list[Event]:
-        raise NotImplementedError
-
-
-class ICloudCalDAVBackend(CalendarBackend):
-    name = "icloud"
-
-    CALDAV_URL = "https://caldav.icloud.com/"
-
-    def __init__(self, username: str, password: str, whitelist: list[str]):
-        self.username = username
-        self.password = password
-        self.whitelist = [w.strip() for w in whitelist if w.strip()]
-        self._client = None
-        self._calendars = None
-        self._all_calendars = None
-
-    def _connect(self):
-        if self._calendars is not None:
-            return
-        import caldav
-
-        logger.info("CalDAV connect: user=%s url=%s", self.username, self.CALDAV_URL)
-        self._client = caldav.DAVClient(
-            url=self.CALDAV_URL,
-            username=self.username,
-            password=self.password,
-        )
-        principal = self._client.principal()
-        all_cals = principal.calendars()
-        self._all_calendars = all_cals
-        self._calendars = [
-            c for c in all_cals if (c.name or "").strip() in self.whitelist
-        ]
-        logger.info(
-            "CalDAV connected: %d/%d calendars whitelisted (%s), %d total",
-            len(self._calendars),
-            len(all_cals),
-            [c.name for c in self._calendars],
-            len(all_cals),
-        )
-
-    def fetch_events(self, start: datetime, end: datetime) -> list[Event]:
-        try:
-            self._connect()
-        except Exception as e:
-            logger.error("iCloud connect failed: %s\n%s", e, traceback.format_exc())
-            return []
-
-        # Widen the server-side query backwards so multi-day events that
-        # started before `start` are still returned; Python filter below
-        # narrows the result back to exact overlap semantics.
-        query_start = (start - timedelta(days=_MULTIDAY_LOOKBACK_DAYS)).astimezone(UTC)
-        query_end = end.astimezone(UTC)
-
-        events: list[Event] = []
-        for cal in self._calendars or []:
-            cal_name = (cal.name or "").strip()
-            try:
-                results = cal.search(
-                    start=query_start,
-                    end=query_end,
-                    event=True,
-                    expand=True,
-                )
-            except Exception as e:
-                logger.error(
-                    "search failed for '%s': %s\n%s",
-                    cal_name,
-                    e,
-                    traceback.format_exc(),
-                )
-                continue
-
-            for item in results:
-                try:
-                    ical = item.icalendar_instance
-                except Exception as e:
-                    logger.warning("parse failed: %s", e)
-                    continue
-
-                for component in ical.walk("VEVENT"):
-                    try:
-                        dtstart_prop = component.get("dtstart")
-                        dtstart = dtstart_prop.dt
-                        dtend_prop = component.get("dtend")
-                        if dtend_prop is not None:
-                            dtend = dtend_prop.dt
-                        else:
-                            dtend = dtstart
-
-                        # Detect all-day events: icalendar returns `date`
-                        # (not `datetime`) for VALUE=DATE properties.
-                        # datetime is a subclass of date, so check both.
-                        is_all_day = isinstance(dtstart, date) and not isinstance(
-                            dtstart, datetime
-                        )
-
-                        s = _to_berlin(dtstart)
-                        e = _to_berlin(dtend)
-
-                        # Overlap filter: keep if event.end > query.start
-                        # AND event.start < query.end (RFC 4791 semantics).
-                        if e <= start.astimezone(BERLIN):
-                            continue
-                        if s >= end.astimezone(BERLIN):
-                            continue
-
-                        title = str(component.get("summary") or "(ohne Titel)")
-                        location = component.get("location")
-                        location = str(location) if location else None
-
-                        events.append(
-                            Event(
-                                title=title,
-                                start=s,
-                                end=e,
-                                location=location,
-                                calendar_name=cal_name,
-                                source=self.name,
-                                all_day=is_all_day,
-                            )
-                        )
-                    except Exception as ex:
-                        logger.warning("event parse failed: %s", ex)
-                        continue
-
-        logger.info(
-            "fetch_events: window=%s..%s calendars=%d events=%d",
-            start.isoformat(),
-            end.isoformat(),
-            len(self._calendars or []),
-            len(events),
-        )
-        return events
-
-    def create_event(
-        self,
-        title: str,
-        start_dt: datetime,
-        end_dt: datetime,
-        calendar_name: Optional[str] = None,
-    ) -> None:
-        """Create a new VEVENT in the specified calendar (or first whitelisted calendar)."""
-        import uuid
-        from icalendar import Calendar as ICalendar, Event as IEvent
-
-        self._connect()
-        if not self._calendars:
-            raise RuntimeError("Keine Kalender verfügbar")
-
-        target = None
-        if calendar_name:
-            for cal in self._calendars:
-                if (cal.name or "").strip().lower() == calendar_name.lower():
-                    target = cal
-                    break
-            if target is None:
-                raise ValueError(f"Kalender '{calendar_name}' nicht gefunden")
-        if target is None:
-            target = self._calendars[0]
-
-        ical = ICalendar()
-        ical.add("prodid", "-//Jarvis//EN")
-        ical.add("version", "2.0")
-
-        event = IEvent()
-        event.add("summary", title)
-        event.add("dtstart", start_dt)
-        event.add("dtend", end_dt)
-        event.add("uid", str(uuid.uuid4()))
-
-        ical.add_component(event)
-        target.save_event(ical.to_ical().decode("utf-8"))
-        logger.info(
-            "Termin erstellt: '%s' in '%s' (%s)",
-            title,
-            target.name,
-            start_dt.isoformat(),
-        )
+    With the `Prefer: outlook.timezone` header Graph returns local times
+    without an offset (e.g. "2026-05-16T10:00:00.0000000"). Parse them
+    naively and attach Europe/Berlin. Graph sends 7 fractional digits;
+    datetime.fromisoformat accepts at most 6, so trim.
+    """
+    raw = value["dateTime"]
+    if "." in raw:
+        head, frac = raw.split(".", 1)
+        raw = f"{head}.{frac[:6]}"
+    return _to_berlin(datetime.fromisoformat(raw))
 
 
 class CalendarAgent:
-    """Aggregates events from multiple backends and exposes a stable API."""
+    """Reads and writes the user's default Outlook calendar via MS Graph."""
 
-    def __init__(self, backends: Optional[list[CalendarBackend]] = None):
-        if backends is None:
-            backends = self._default_backends()
-        self.backends = backends
+    DEFAULT_CALENDAR_NAME = "Outlook"
 
-    @staticmethod
-    def _default_backends() -> list[CalendarBackend]:
-        backends: list[CalendarBackend] = []
-
-        icloud_user = os.environ.get("ICLOUD_USER")
-        icloud_pw = os.environ.get("ICLOUD_APP_PASSWORD")
-        whitelist_raw = os.environ.get("CALENDAR_WHITELIST", "")
-        whitelist = [w.strip() for w in whitelist_raw.split(",") if w.strip()]
-
-        if icloud_user and icloud_pw and whitelist:
-            backends.append(
-                ICloudCalDAVBackend(
-                    username=icloud_user,
-                    password=icloud_pw,
-                    whitelist=whitelist,
-                )
-            )
-        else:
-            logger.warning("iCloud backend disabled (missing env vars)")
-
-        return backends
-
-    def _deduplicate(self, events: list[Event]) -> list[Event]:
-        """Placeholder for multi-backend dedup.
-        Stage 1: single backend -> passthrough.
-        Later: merge events with same title + overlapping time window.
-        """
-        return events
+    def _headers(self, prefer_berlin: bool = False) -> dict:
+        headers = {
+            "Authorization": f"Bearer {get_access_token()}",
+            "Content-Type": "application/json",
+        }
+        if prefer_berlin:
+            headers["Prefer"] = 'outlook.timezone="Europe/Berlin"'
+        return headers
 
     def get_events(self, start: datetime, end: datetime) -> list[Event]:
         if start.tzinfo is None:
             start = start.replace(tzinfo=BERLIN)
         if end.tzinfo is None:
             end = end.replace(tzinfo=BERLIN)
-
-        all_events: list[Event] = []
-        for backend in self.backends:
-            try:
-                all_events.extend(backend.fetch_events(start, end))
-            except Exception as e:
-                logger.error(
-                    "backend '%s' failed: %s\n%s",
-                    backend.name,
-                    e,
-                    traceback.format_exc(),
-                )
-
-        all_events = self._deduplicate(all_events)
-        all_events.sort(key=lambda ev: ev.start)
+        try:
+            events = self._fetch_calendar_view(start, end)
+        except Exception as e:
+            logger.error("get_events failed: %s", e)
+            return []
+        events.sort(key=lambda ev: ev.start)
         logger.info(
-            "get_events: %s..%s -> %d events from %d backends",
+            "get_events: %s..%s -> %d events",
             start.isoformat(),
             end.isoformat(),
-            len(all_events),
-            len(self.backends),
+            len(events),
         )
-        return all_events
+        return events
+
+    def _fetch_calendar_view(self, start: datetime, end: datetime) -> list[Event]:
+        url: Optional[str] = f"{_GRAPH}/me/calendarView"
+        params: Optional[dict] = {
+            "startDateTime": start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
+            "endDateTime": end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
+            "$orderby": "start/dateTime",
+            "$top": 100,
+            "$select": "subject,start,end,isAllDay,location",
+        }
+        headers = self._headers(prefer_berlin=True)
+        events: list[Event] = []
+        while url:
+            resp = httpx.get(url, headers=headers, params=params, timeout=15)
+            resp.raise_for_status()
+            payload = resp.json()
+            for item in payload.get("value", []):
+                events.append(self._to_event(item))
+            url = payload.get("@odata.nextLink")
+            params = None  # nextLink already carries the query string
+        return events
+
+    @classmethod
+    def _to_event(cls, item: dict) -> Event:
+        location = (item.get("location") or {}).get("displayName") or None
+        return Event(
+            title=item.get("subject") or "(ohne Titel)",
+            start=_parse_graph_dt(item["start"]),
+            end=_parse_graph_dt(item["end"]),
+            location=location,
+            calendar_name=cls.DEFAULT_CALENDAR_NAME,
+            source="outlook",
+            all_day=bool(item.get("isAllDay")),
+        )
 
     def get_next_event(self) -> Optional[Event]:
         now = datetime.now(BERLIN)
-        # Look up to 60 days ahead
         events = self.get_events(now, now + timedelta(days=60))
         for ev in events:
             if ev.start >= now:
                 return ev
         return None
 
-    def get_reminders_today(self) -> list[str]:
-        from datetime import date
-
-        today = date.today()
-        reminders = []
-        for backend in self.backends:
-            if not isinstance(backend, ICloudCalDAVBackend):
-                continue
-            try:
-                backend._connect()
-            except Exception as e:
-                logger.warning("CalDAV connect failed for reminders: %s", e)
-                continue
-            for cal in backend._all_calendars or []:
-                try:
-                    results = cal.search(todo=True)
-                except Exception as e:
-                    logger.warning("VTODO search failed for '%s': %s", cal.name, e)
-                    continue
-                for item in results:
-                    try:
-                        ical = item.icalendar_instance
-                    except Exception:
-                        continue
-                    for component in ical.walk("VTODO"):
-                        status = str(component.get("status") or "").upper()
-                        if status in ("COMPLETED", "CANCELLED"):
-                            continue
-                        due_prop = component.get("due")
-                        if due_prop is not None:
-                            due = due_prop.dt
-                            due_date = (
-                                due
-                                if isinstance(due, date)
-                                and not isinstance(due, datetime)
-                                else due.date()
-                            )
-                            if due_date != today:
-                                continue
-                        title = str(component.get("summary") or "(ohne Titel)")
-                        reminders.append(title)
-        return reminders
-
-    def get_calendar_names(self) -> list[str]:
-        """Return whitelisted calendar names from env."""
-        raw = os.environ.get("CALENDAR_WHITELIST", "")
-        return [w.strip() for w in raw.split(",") if w.strip()]
-
-    def create_event(
-        self,
-        title: str,
-        start_dt: datetime,
-        end_dt: datetime,
-        calendar_name: Optional[str] = None,
-    ) -> None:
-        """Create event on first available backend that supports it."""
-        for backend in self.backends:
-            if hasattr(backend, "create_event"):
-                backend.create_event(
-                    title, start_dt, end_dt, calendar_name=calendar_name
-                )
-                return
-        raise RuntimeError("Kein Backend mit create_event verfügbar")
+    def create_event(self, title: str, start_dt: datetime, end_dt: datetime) -> None:
+        """Create an event on the default Outlook calendar. Raises on failure."""
+        body = {
+            "subject": title,
+            "start": {
+                "dateTime": _to_berlin(start_dt).strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "Europe/Berlin",
+            },
+            "end": {
+                "dateTime": _to_berlin(end_dt).strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "Europe/Berlin",
+            },
+        }
+        resp = httpx.post(
+            f"{_GRAPH}/me/events",
+            headers=self._headers(),
+            json=body,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        logger.info("Termin erstellt: '%s' (%s)", title, start_dt.isoformat())
