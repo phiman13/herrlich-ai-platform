@@ -10,6 +10,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 _CALENDAR_VIEW_JSON = {
     "value": [
         {
+            "id": "evt-zahnarzt",
             "subject": "Zahnarzt",
             "start": {
                 "dateTime": "2026-05-16T10:00:00.0000000",
@@ -21,8 +22,10 @@ _CALENDAR_VIEW_JSON = {
             },
             "isAllDay": False,
             "location": {"displayName": "Praxis Dr. Müller"},
+            "type": "singleInstance",
         },
         {
+            "id": "evt-urlaub",
             "subject": "Urlaub",
             "start": {
                 "dateTime": "2026-05-16T00:00:00.0000000",
@@ -34,6 +37,7 @@ _CALENDAR_VIEW_JSON = {
             },
             "isAllDay": True,
             "location": {"displayName": ""},
+            "type": "occurrence",
         },
     ]
 }
@@ -66,6 +70,8 @@ def test_get_events_maps_graph_payload():
     assert ev.location == "Praxis Dr. Müller"
     assert ev.all_day is False
     assert ev.source == "outlook"
+    assert ev.id == "evt-zahnarzt"
+    assert ev.recurring is False
     assert "calendarView" in mock_get.call_args[0][0]
 
 
@@ -83,6 +89,8 @@ def test_get_events_marks_all_day_and_empty_location():
     urlaub = [e for e in events if e.title == "Urlaub"][0]
     assert urlaub.all_day is True
     assert urlaub.location is None
+    assert urlaub.id == "evt-urlaub"
+    assert urlaub.recurring is True
 
 
 def test_get_events_returns_empty_on_error():

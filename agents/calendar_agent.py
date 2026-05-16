@@ -31,6 +31,7 @@ _GRAPH = "https://graph.microsoft.com/v1.0"
 
 @dataclass
 class Event:
+    id: str
     title: str
     start: datetime
     end: datetime
@@ -38,6 +39,7 @@ class Event:
     calendar_name: str
     source: str  # "outlook"
     all_day: bool = False
+    recurring: bool = False
 
 
 def _to_berlin(dt: datetime) -> datetime:
@@ -102,7 +104,7 @@ class CalendarAgent:
             "endDateTime": end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
             "$orderby": "start/dateTime",
             "$top": 100,
-            "$select": "subject,start,end,isAllDay,location",
+            "$select": "id,subject,start,end,isAllDay,location,type",
         }
         headers = self._headers(prefer_berlin=True)
         events: list[Event] = []
@@ -120,6 +122,7 @@ class CalendarAgent:
     def _to_event(cls, item: dict) -> Event:
         location = (item.get("location") or {}).get("displayName") or None
         return Event(
+            id=item["id"],
             title=item.get("subject") or "(ohne Titel)",
             start=_parse_graph_dt(item["start"]),
             end=_parse_graph_dt(item["end"]),
@@ -127,6 +130,7 @@ class CalendarAgent:
             calendar_name=cls.DEFAULT_CALENDAR_NAME,
             source="outlook",
             all_day=bool(item.get("isAllDay")),
+            recurring=item.get("type") not in (None, "singleInstance"),
         )
 
     def get_next_event(self) -> Optional[Event]:
