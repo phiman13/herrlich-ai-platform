@@ -21,6 +21,7 @@ from telegram.ext import (
     ContextTypes,
 )
 import anthropic
+import app_state
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -64,17 +65,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jarvis")
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 claude = anthropic.Anthropic()
 
 app = FastAPI()
-bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
-
-processed_updates = set()
+bot_app = Application.builder().token(app_state.TELEGRAM_TOKEN).build()
 
 
 async def send_typing(chat_id: int):
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
 
@@ -82,21 +80,6 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
     while not stop_event.is_set():
         await send_typing(chat_id)
         await asyncio.sleep(4)
-
-
-_pending_mail_ops: dict[int, dict] = {}
-_pending_calendar_ops: dict[int, dict] = {}
-_last_mail_search: dict[int, dict] = {}
-_last_calendar_search: dict[int, dict] = {}
-
-_PENDING_OP_TTL = (
-    600  # Sekunden — Confirm-Buttons älter als 10 Min gelten als abgelaufen
-)
-
-
-def _pending_op_expired(op: dict) -> bool:
-    """True wenn eine Pending-Op älter als _PENDING_OP_TTL ist."""
-    return time.time() - op.get("staged_at", 0) > _PENDING_OP_TTL
 
 
 # Conversation history for router context: each entry {"u": user_text, "j": bot_summary}
@@ -134,11 +117,8 @@ def _conv_to_prev_texts(chat_id: int) -> list[str]:
     return lines
 
 
-_memory_agent = None  # initialized in startup()
 _MEMORY_INTENTS = {"personal", "work", "research"}
-_conversation_db = None  # initialized in startup()
 _HISTORY_INTENTS = {"personal", "work", "research"}
-_profile_agent = None  # initialized in startup()
 
 
 def detect_calendar_window(text):
@@ -267,7 +247,7 @@ def format_folder_list(folders):
 
 
 async def handle_mail(chat_id, text, params):
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     from mail_agent import MailAgent
 
     mode = params.get("mode", "quick_scan")
@@ -284,7 +264,7 @@ async def handle_mail(chat_id, text, params):
             )
             return
 
-        _pending_mail_ops[chat_id] = {
+        app_state.pending_mail_ops[chat_id] = {
             "type": "compose",
             "to_email": to_email,
             "subject": subject,
@@ -370,7 +350,7 @@ async def handle_mail(chat_id, text, params):
 
 
 async def _handle_mail_write(chat_id: int, mode: str, params: dict) -> None:
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     from mail_agent import MailAgent
 
     mail_query = (
@@ -425,7 +405,7 @@ async def _handle_mail_write(chat_id: int, mode: str, params: dict) -> None:
             [InlineKeyboardButton(str(i + 1), callback_data=f"mail:select:{i}")]
         )
 
-    _last_mail_search[chat_id] = {
+    app_state.last_mail_search[chat_id] = {
         "mails": mails,
         "mode": mode,
         "params": params,
@@ -442,7 +422,7 @@ async def _handle_mail_write(chat_id: int, mode: str, params: dict) -> None:
 async def _show_mail_action_confirm(
     chat_id: int, mail, mode: str, params: dict
 ) -> None:
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     from mail_agent import MailAgent
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -514,7 +494,7 @@ async def _show_mail_action_confirm(
     else:
         text = f"{title}\n\nVon: {sender}\nBetreff: {subject_clean}\nDatum: {date_str}"
 
-    _pending_mail_ops[chat_id] = {
+    app_state.pending_mail_ops[chat_id] = {
         "type": mode,
         "mail_id": mail.id,
         "subject": mail.subject,
@@ -550,7 +530,7 @@ async def handle_calendar(
     mode="read",
     title=None,
 ):
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
 
     if mode == "write":
         if not title or not start:
@@ -562,7 +542,7 @@ async def handle_calendar(
             end = start + timedelta(hours=1)
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-        _pending_calendar_ops[chat_id] = {
+        app_state.pending_calendar_ops[chat_id] = {
             "type": "create",
             "title": title,
             "start": start,
@@ -612,7 +592,7 @@ async def handle_calendar(
 
 async def handle_calendar_modify(chat_id, mode, params):
     """Find a target event from a description, then show an update/delete confirm."""
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     query = params.get("query")
@@ -659,7 +639,7 @@ async def handle_calendar_modify(chat_id, mode, params):
         await _show_calendar_action_confirm(chat_id, events[0], mode, params)
         return
 
-    _last_calendar_search[chat_id] = {
+    app_state.last_calendar_search[chat_id] = {
         "events": events,
         "mode": mode,
         "params": params,
@@ -687,8 +667,8 @@ def _md_safe(s) -> str:
 
 
 async def _show_calendar_action_confirm(chat_id, event, mode, params):
-    """Stage an update/delete op in _pending_calendar_ops and send the confirm dialog."""
-    bot = Bot(token=TELEGRAM_TOKEN)
+    """Stage an update/delete op in app_state.pending_calendar_ops and send the confirm dialog."""
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     recurring_note = (
@@ -697,7 +677,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
     title_safe = _md_safe(event.title)
 
     if mode == "delete":
-        _pending_calendar_ops[chat_id] = {
+        app_state.pending_calendar_ops[chat_id] = {
             "type": "delete",
             "event_id": event.id,
             "title": event.title,
@@ -719,7 +699,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
         if new_start and not new_end:
             new_end = new_start + (event.end - event.start)
 
-        _pending_calendar_ops[chat_id] = {
+        app_state.pending_calendar_ops[chat_id] = {
             "type": "update",
             "event_id": event.id,
             "title": new_title or event.title,
@@ -767,7 +747,7 @@ async def ask_claude(
     use_web_search=False,
     history: list[dict] | None = None,
 ) -> str:
-    bot = Bot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=app_state.TELEGRAM_TOKEN)
     answer = ""
     try:
         kwargs = {
@@ -878,8 +858,10 @@ async def handle_research(
     finally:
         stop.set()
         await typing_task
-    if _memory_agent:
-        asyncio.create_task(_memory_agent.extract(text, answer, source="research"))
+    if app_state.memory_agent:
+        asyncio.create_task(
+            app_state.memory_agent.extract(text, answer, source="research")
+        )
     return answer
 
 
@@ -970,8 +952,8 @@ async def handle_work(
     finally:
         stop.set()
         await typing_task
-    if _memory_agent:
-        asyncio.create_task(_memory_agent.extract(text, answer, source="work"))
+    if app_state.memory_agent:
+        asyncio.create_task(app_state.memory_agent.extract(text, answer, source="work"))
     return answer
 
 
@@ -1092,13 +1074,13 @@ async def handle_briefing(chat_id: int, update: Update) -> None:
 async def handle_memory(chat_id: int, params: dict, update: Update) -> None:
     mode = params.get("mode", "list")
     query = params.get("query")
-    if not _memory_agent:
+    if not app_state.memory_agent:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
     if mode == "delete":
-        msg = await _memory_agent.delete_memory(query)
+        msg = await app_state.memory_agent.delete_memory(query)
     else:
-        msg = await _memory_agent.list_memories()
+        msg = await app_state.memory_agent.list_memories()
     await update.message.reply_text(msg, parse_mode="Markdown")
     _conv_complete(chat_id, f"Erinnerungen {mode}")
 
@@ -1135,8 +1117,10 @@ async def handle_personal(
     finally:
         stop.set()
         await typing_task
-    if _memory_agent:
-        asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+    if app_state.memory_agent:
+        asyncio.create_task(
+            app_state.memory_agent.extract(text, answer, source="personal")
+        )
     return answer
 
 
@@ -1159,15 +1143,15 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     memory_context = ""
     if intent in _MEMORY_INTENTS:
-        if _profile_agent:
+        if app_state.profile_agent:
             try:
-                profile = _profile_agent.load()
+                profile = app_state.profile_agent.load()
                 memory_context += f"=== Philipps Profil ===\n{profile}\n\n"
             except Exception as e:
                 logger.warning("Profile load failed: %s", e)
-        if _memory_agent:
+        if app_state.memory_agent:
             try:
-                memories = await _memory_agent.retrieve()
+                memories = await app_state.memory_agent.retrieve()
                 if memories:
                     bullet_list = "\n".join(f"• {m}" for m in memories)
                     memory_context += f"=== Erinnerungen ===\n{bullet_list}\n\n"
@@ -1178,9 +1162,9 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     answer: str = ""
     history: list[dict] = []
-    if _conversation_db and intent in _HISTORY_INTENTS:
+    if app_state.conversation_db and intent in _HISTORY_INTENTS:
         try:
-            history = await _conversation_db.get_recent(chat_id, n=20)
+            history = await app_state.conversation_db.get_recent(chat_id, n=20)
         except Exception as e:
             logger.warning("History load failed: %s", e)
 
@@ -1219,35 +1203,35 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         _conv_complete(chat_id, answer[:180])
 
     if (
-        _conversation_db
+        app_state.conversation_db
         and intent in _HISTORY_INTENTS
         and answer
         and not answer.startswith("Fehler:")
     ):
         try:
-            await _conversation_db.save(chat_id, "user", text)
-            await _conversation_db.save(chat_id, "assistant", answer)
+            await app_state.conversation_db.save(chat_id, "user", text)
+            await app_state.conversation_db.save(chat_id, "assistant", answer)
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
     if (
-        _profile_agent
+        app_state.profile_agent
         and intent in _HISTORY_INTENTS
         and answer
         and not answer.startswith("Fehler:")
     ):
         conversation = f"Philipp: {text}\n\nJarvis: {answer}"
-        asyncio.create_task(_profile_agent.update(conversation))
+        asyncio.create_task(app_state.profile_agent.update(conversation))
 
 
 async def handle_message(update, context):
     update_id = update.update_id
-    if update_id in processed_updates:
+    if update_id in app_state.processed_updates:
         logger.info(f"Duplikat ignoriert: update_id={update_id}")
         return
-    processed_updates.add(update_id)
-    if len(processed_updates) > 1000:
-        processed_updates.clear()
+    app_state.processed_updates.add(update_id)
+    if len(app_state.processed_updates) > 1000:
+        app_state.processed_updates.clear()
 
     text = update.message.text
     chat_id = update.message.chat_id
@@ -1256,12 +1240,12 @@ async def handle_message(update, context):
 
 async def handle_voice(update, context):
     update_id = update.update_id
-    if update_id in processed_updates:
+    if update_id in app_state.processed_updates:
         logger.info(f"Duplikat ignoriert: update_id={update_id}")
         return
-    processed_updates.add(update_id)
-    if len(processed_updates) > 1000:
-        processed_updates.clear()
+    app_state.processed_updates.add(update_id)
+    if len(app_state.processed_updates) > 1000:
+        app_state.processed_updates.clear()
 
     chat_id = update.message.chat_id
     try:
@@ -1356,11 +1340,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:send":
         chat_id = query.message.chat_id
-        draft = _pending_mail_ops.pop(chat_id, None)
+        draft = app_state.pending_mail_ops.pop(chat_id, None)
         if draft is None:
             await query.edit_message_text("⚠️ Kein Entwurf mehr vorhanden.")
             return
-        if _pending_op_expired(draft):
+        if app_state._pending_op_expired(draft):
             await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
             return
         from mail_agent import MailAgent
@@ -1379,16 +1363,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:cancel":
         chat_id = query.message.chat_id
-        _pending_mail_ops.pop(chat_id, None)
+        app_state.pending_mail_ops.pop(chat_id, None)
         await query.edit_message_text("❌ Entwurf verworfen.")
 
     elif data == "mail:action:confirm":
         chat_id = query.message.chat_id
-        op = _pending_mail_ops.pop(chat_id, None)
+        op = app_state.pending_mail_ops.pop(chat_id, None)
         if op is None:
             await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
             return
-        if _pending_op_expired(op):
+        if app_state._pending_op_expired(op):
             await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
             return
         from mail_agent import MailAgent
@@ -1440,15 +1424,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "mail:action:cancel":
         chat_id = query.message.chat_id
-        _pending_mail_ops.pop(chat_id, None)
-        _last_mail_search.pop(chat_id, None)
+        app_state.pending_mail_ops.pop(chat_id, None)
+        app_state.last_mail_search.pop(chat_id, None)
         await query.edit_message_text("❌ Abgebrochen.")
 
     elif data.startswith("mail:select:"):
         chat_id = query.message.chat_id
-        entry = _last_mail_search.get(chat_id)
+        entry = app_state.last_mail_search.get(chat_id)
         if entry is None or (time.time() - entry["timestamp"]) > 180:
-            _last_mail_search.pop(chat_id, None)
+            app_state.last_mail_search.pop(chat_id, None)
             await query.edit_message_text("⏱️ Auswahl abgelaufen — bitte nochmal.")
             return
         try:
@@ -1463,17 +1447,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mail = mails[idx]
         mode = entry["mode"]
         params = entry["params"]
-        _last_mail_search.pop(chat_id, None)
+        app_state.last_mail_search.pop(chat_id, None)
         await query.edit_message_reply_markup(reply_markup=None)
         await _show_mail_action_confirm(chat_id, mail, mode, params)
 
     elif data == "cal:action:confirm":
         chat_id = query.message.chat_id
-        op = _pending_calendar_ops.pop(chat_id, None)
+        op = app_state.pending_calendar_ops.pop(chat_id, None)
         if op is None:
             await query.edit_message_text("⚠️ Keine ausstehende Aktion gefunden.")
             return
-        if _pending_op_expired(op):
+        if app_state._pending_op_expired(op):
             await query.edit_message_text("⏱️ Abgelaufen — bitte nochmal.")
             return
         try:
@@ -1511,15 +1495,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cal:action:cancel":
         chat_id = query.message.chat_id
-        _pending_calendar_ops.pop(chat_id, None)
-        _last_calendar_search.pop(chat_id, None)
+        app_state.pending_calendar_ops.pop(chat_id, None)
+        app_state.last_calendar_search.pop(chat_id, None)
         await query.edit_message_text("❌ Abgebrochen.")
 
     elif data.startswith("cal:select:"):
         chat_id = query.message.chat_id
-        entry = _last_calendar_search.get(chat_id)
+        entry = app_state.last_calendar_search.get(chat_id)
         if entry is None or (time.time() - entry["timestamp"]) > 180:
-            _last_calendar_search.pop(chat_id, None)
+            app_state.last_calendar_search.pop(chat_id, None)
             await query.edit_message_text("⏱️ Auswahl abgelaufen — bitte nochmal.")
             return
         try:
@@ -1534,7 +1518,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         event = events[idx]
         mode = entry["mode"]
         params = entry["params"]
-        _last_calendar_search.pop(chat_id, None)
+        app_state.last_calendar_search.pop(chat_id, None)
         await query.edit_message_reply_markup(reply_markup=None)
         await _show_calendar_action_confirm(chat_id, event, mode, params)
 
@@ -1688,7 +1672,7 @@ async def github_webhook(request: Request):
     chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
     if chat_id_str:
         try:
-            bot = Bot(token=TELEGRAM_TOKEN)
+            bot = Bot(token=app_state.TELEGRAM_TOKEN)
             status = "✅" if success else "❌"
             if not already_up:
                 await bot.send_message(
@@ -1713,24 +1697,23 @@ async def startup():
     from coding_agent import _ensure_init
 
     await _ensure_init()
-    global _memory_agent, _conversation_db, _profile_agent
     from db import MemoryDB
     from memory_agent import MemoryAgent
 
     _memory_db = MemoryDB()
     await _memory_db.init()
-    _memory_agent = MemoryAgent(_memory_db)
+    app_state.memory_agent = MemoryAgent(_memory_db)
     logger.info("MemoryDB initialisiert")
     from db import ConversationDB
 
     _conv_db = ConversationDB()
     await _conv_db.init()
-    _conversation_db = _conv_db
+    app_state.conversation_db = _conv_db
     logger.info("ConversationDB initialisiert")
     from profile_agent import ProfileAgent
 
-    _profile_agent = ProfileAgent()
-    _profile_agent.load()  # creates profile file if it doesn't exist yet
+    app_state.profile_agent = ProfileAgent()
+    app_state.profile_agent.load()  # creates profile file if it doesn't exist yet
     logger.info("ProfileAgent initialisiert")
     from db import ProactiveDB
     from proactive_agent import init_proactive
@@ -1738,7 +1721,7 @@ async def startup():
     _proactive_db = ProactiveDB()
     await _proactive_db.init()
     init_proactive(_proactive_db, _memory_db)
-    task = asyncio.create_task(_memory_agent.migrate_embeddings())
+    task = asyncio.create_task(app_state.memory_agent.migrate_embeddings())
     task.add_done_callback(
         lambda t: (
             logger.error("Migration failed: %s", t.exception())

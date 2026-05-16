@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import agents.main as main_module
+import app_state
 
 
 @pytest.fixture(autouse=True)
@@ -10,17 +11,18 @@ def fresh_memory_agent(tmp_path):
     """Replace global memory_agent with a test instance backed by a temp DB."""
     from agents.db import MemoryDB
     from agents.memory_agent import MemoryAgent
+
     db = MemoryDB(str(tmp_path / "mem.db"))
     asyncio.run(db.init())
     agent = MemoryAgent(db)
-    main_module._memory_agent = agent
+    app_state.memory_agent = agent
     yield agent
-    main_module._memory_agent = None
+    app_state.memory_agent = None
 
 
 def test_memory_agent_is_none_by_default():
     # The fixture sets it — just verify the fixture works
-    assert main_module._memory_agent is not None
+    assert app_state.memory_agent is not None
 
 
 def test_retrieve_called_for_personal_intent(fresh_memory_agent):
@@ -32,10 +34,18 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
         return []
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
-        with patch("agents.main.route_with_llm", return_value={
-            "intent": "personal", "confidence": 8, "params": {}, "reasoning": "test"
-        }):
-            with patch("agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"):
+        with patch(
+            "agents.main.route_with_llm",
+            return_value={
+                "intent": "personal",
+                "confidence": 8,
+                "params": {},
+                "reasoning": "test",
+            },
+        ):
+            with patch(
+                "agents.main.ask_claude", new_callable=AsyncMock, return_value="ok"
+            ):
                 with patch("agents.main.send_typing", new_callable=AsyncMock):
                     update = MagicMock()
                     update.update_id = 99991
@@ -56,12 +66,22 @@ def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
         return []
 
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
-        with patch("agents.main.route_with_llm", return_value={
-            "intent": "calendar", "confidence": 9,
-            "params": {"mode": "read", "kind": "today", "start": None, "end": None,
-                       "title": None, "calendar_name": None},
-            "reasoning": "test",
-        }):
+        with patch(
+            "agents.main.route_with_llm",
+            return_value={
+                "intent": "calendar",
+                "confidence": 9,
+                "params": {
+                    "mode": "read",
+                    "kind": "today",
+                    "start": None,
+                    "end": None,
+                    "title": None,
+                    "calendar_name": None,
+                },
+                "reasoning": "test",
+            },
+        ):
             with patch("agents.main.handle_calendar", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 99992
@@ -76,14 +96,21 @@ def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
 def test_memory_list_intent_handler(fresh_memory_agent):
     """memory intent with mode=list calls list_memories and replies."""
     import numpy as np
-    vec = np.zeros(1536, dtype=np.float32)
-    asyncio.run(fresh_memory_agent.db.save("Philipp mag Tee", vec.tobytes(), "preference", "t"))
 
-    with patch("agents.main.route_with_llm", return_value={
-        "intent": "memory", "confidence": 9,
-        "params": {"mode": "list", "query": None},
-        "reasoning": "test",
-    }):
+    vec = np.zeros(1536, dtype=np.float32)
+    asyncio.run(
+        fresh_memory_agent.db.save("Philipp mag Tee", vec.tobytes(), "preference", "t")
+    )
+
+    with patch(
+        "agents.main.route_with_llm",
+        return_value={
+            "intent": "memory",
+            "confidence": 9,
+            "params": {"mode": "list", "query": None},
+            "reasoning": "test",
+        },
+    ):
         update = MagicMock()
         update.update_id = 99993
         update.message.text = "Was weißt du über mich?"
@@ -99,15 +126,22 @@ def test_memory_list_intent_handler(fresh_memory_agent):
 def test_memory_delete_intent_handler(fresh_memory_agent):
     """memory intent with mode=delete calls delete_memory and replies."""
     import numpy as np
+
     vec = np.zeros(1536, dtype=np.float32)
     vec[0] = 1.0
-    asyncio.run(fresh_memory_agent.db.save("Siemens Pitch", vec.tobytes(), "event", "t"))
+    asyncio.run(
+        fresh_memory_agent.db.save("Siemens Pitch", vec.tobytes(), "event", "t")
+    )
 
-    with patch("agents.main.route_with_llm", return_value={
-        "intent": "memory", "confidence": 9,
-        "params": {"mode": "delete", "query": "Siemens"},
-        "reasoning": "test",
-    }):
+    with patch(
+        "agents.main.route_with_llm",
+        return_value={
+            "intent": "memory",
+            "confidence": 9,
+            "params": {"mode": "delete", "query": "Siemens"},
+            "reasoning": "test",
+        },
+    ):
         with patch("agents.memory_agent._embed", return_value=vec):
             update = MagicMock()
             update.update_id = 99994

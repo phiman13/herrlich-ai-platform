@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import agents.main as main
+import app_state
 
 
 def _make_cbq(data, chat_id=123):
@@ -32,10 +33,10 @@ def _edited(update):
 @pytest.fixture(autouse=True)
 def _clear_state():
     _dicts = (
-        main._pending_mail_ops,
-        main._pending_calendar_ops,
-        main._last_mail_search,
-        main._last_calendar_search,
+        app_state.pending_mail_ops,
+        app_state.pending_calendar_ops,
+        app_state.last_mail_search,
+        app_state.last_calendar_search,
     )
     for d in _dicts:
         d.clear()
@@ -48,7 +49,7 @@ def _clear_state():
 
 
 def test_mail_send_expired_op_is_rejected():
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": "compose",
         "to_email": "a@b.de",
         "subject": "S",
@@ -63,7 +64,7 @@ def test_mail_send_expired_op_is_rejected():
 
 
 def test_mail_action_confirm_expired_op_is_rejected():
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": "archive",
         "mail_id": "m1",
         "subject": "S",
@@ -78,7 +79,7 @@ def test_mail_action_confirm_expired_op_is_rejected():
 
 
 def test_cal_action_confirm_expired_op_is_rejected():
-    main._pending_calendar_ops[123] = {
+    app_state.pending_calendar_ops[123] = {
         "type": "create",
         "title": "T",
         "start": datetime(2026, 6, 1, 10, 0),
@@ -96,7 +97,7 @@ def test_cal_action_confirm_expired_op_is_rejected():
 
 
 def test_mail_send_fresh_op_is_sent():
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": "compose",
         "to_email": "a@b.de",
         "subject": "S",
@@ -112,7 +113,7 @@ def test_mail_send_fresh_op_is_sent():
 
 
 def test_mail_action_confirm_fresh_op_executes():
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": "archive",
         "mail_id": "m1",
         "subject": "S",
@@ -128,7 +129,7 @@ def test_mail_action_confirm_fresh_op_executes():
 
 
 def test_cal_action_confirm_fresh_op_executes():
-    main._pending_calendar_ops[123] = {
+    app_state.pending_calendar_ops[123] = {
         "type": "delete",
         "event_id": "e1",
         "title": "Zahnarzt",
@@ -145,10 +146,10 @@ def test_cal_action_confirm_fresh_op_executes():
 
 
 def test_mail_cancel_discards_draft():
-    main._pending_mail_ops[123] = {"type": "compose", "staged_at": time.time()}
+    app_state.pending_mail_ops[123] = {"type": "compose", "staged_at": time.time()}
     update = _make_cbq("mail:cancel")
     asyncio.run(main.handle_callback(update, None))
-    assert 123 not in main._pending_mail_ops
+    assert 123 not in app_state.pending_mail_ops
     assert "verworfen" in _edited(update)
 
 
@@ -179,7 +180,7 @@ def test_mail_action_confirm_no_op_warns():
     ],
 )
 def test_mail_action_confirm_executes(op_type, method, extra, expected_args, expect):
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": op_type,
         "mail_id": "m1",
         "subject": "S",
@@ -196,7 +197,7 @@ def test_mail_action_confirm_executes(op_type, method, extra, expected_args, exp
 
 
 def test_mail_action_confirm_move():
-    main._pending_mail_ops[123] = {
+    app_state.pending_mail_ops[123] = {
         "type": "move",
         "mail_id": "m1",
         "subject": "S",
@@ -216,17 +217,17 @@ def test_mail_action_confirm_move():
 
 
 def test_mail_action_cancel_clears_state():
-    main._pending_mail_ops[123] = {"type": "archive", "staged_at": time.time()}
-    main._last_mail_search[123] = {"mails": [], "timestamp": time.time()}
+    app_state.pending_mail_ops[123] = {"type": "archive", "staged_at": time.time()}
+    app_state.last_mail_search[123] = {"mails": [], "timestamp": time.time()}
     update = _make_cbq("mail:action:cancel")
     asyncio.run(main.handle_callback(update, None))
-    assert 123 not in main._pending_mail_ops
-    assert 123 not in main._last_mail_search
+    assert 123 not in app_state.pending_mail_ops
+    assert 123 not in app_state.last_mail_search
     assert "Abgebrochen" in _edited(update)
 
 
 def test_mail_select_expired_search_warns():
-    main._last_mail_search[123] = {
+    app_state.last_mail_search[123] = {
         "mails": [MagicMock()],
         "mode": "archive",
         "params": {},
@@ -243,7 +244,7 @@ def test_mail_select_picks_mail_and_shows_confirm():
     mail.subject = "S"
     mail.sender_name = "X"
     mail.sender_email = "x@y.de"
-    main._last_mail_search[123] = {
+    app_state.last_mail_search[123] = {
         "mails": [mail],
         "mode": "archive",
         "params": {},
@@ -256,7 +257,7 @@ def test_mail_select_picks_mail_and_shows_confirm():
         asyncio.run(main.handle_callback(update, None))
     mock_show.assert_awaited_once()
     assert mock_show.await_args[0][1] is mail
-    assert 123 not in main._last_mail_search
+    assert 123 not in app_state.last_mail_search
 
 
 def test_mail_action_roundtrip_archive():
@@ -272,9 +273,9 @@ def test_mail_action_roundtrip_archive():
     with patch("agents.main.Bot") as MockBot:
         MockBot.return_value.send_message = AsyncMock()
         asyncio.run(main._show_mail_action_confirm(123, mail, "archive", {}))
-    assert main._pending_mail_ops[123]["type"] == "archive"
-    assert main._pending_mail_ops[123]["mail_id"] == "m99"
-    assert "staged_at" in main._pending_mail_ops[123]
+    assert app_state.pending_mail_ops[123]["type"] == "archive"
+    assert app_state.pending_mail_ops[123]["mail_id"] == "m99"
+    assert "staged_at" in app_state.pending_mail_ops[123]
 
     update = _make_cbq("mail:action:confirm")
     with patch("mail_agent.MailAgent") as MockAgent:
@@ -301,7 +302,7 @@ def test_dismiss_removes_keyboard():
 
 
 def test_cal_action_confirm_create_executes():
-    main._pending_calendar_ops[123] = {
+    app_state.pending_calendar_ops[123] = {
         "type": "create",
         "title": "Zahnarzt",
         "start": datetime(2026, 6, 1, 10, 0),
@@ -316,7 +317,7 @@ def test_cal_action_confirm_create_executes():
 
 
 def test_cal_action_confirm_update_executes():
-    main._pending_calendar_ops[123] = {
+    app_state.pending_calendar_ops[123] = {
         "type": "update",
         "event_id": "e1",
         "title": "Zahnarzt",
@@ -340,17 +341,17 @@ def test_cal_action_confirm_no_op_warns():
 
 
 def test_cal_action_cancel_clears_state():
-    main._pending_calendar_ops[123] = {"type": "create", "staged_at": time.time()}
-    main._last_calendar_search[123] = {"events": [], "timestamp": time.time()}
+    app_state.pending_calendar_ops[123] = {"type": "create", "staged_at": time.time()}
+    app_state.last_calendar_search[123] = {"events": [], "timestamp": time.time()}
     update = _make_cbq("cal:action:cancel")
     asyncio.run(main.handle_callback(update, None))
-    assert 123 not in main._pending_calendar_ops
-    assert 123 not in main._last_calendar_search
+    assert 123 not in app_state.pending_calendar_ops
+    assert 123 not in app_state.last_calendar_search
     assert "Abgebrochen" in _edited(update)
 
 
 def test_cal_select_expired_search_warns():
-    main._last_calendar_search[123] = {
+    app_state.last_calendar_search[123] = {
         "events": [MagicMock()],
         "mode": "delete",
         "params": {},
@@ -363,7 +364,7 @@ def test_cal_select_expired_search_warns():
 
 def test_cal_select_picks_event_and_shows_confirm():
     event = MagicMock()
-    main._last_calendar_search[123] = {
+    app_state.last_calendar_search[123] = {
         "events": [event],
         "mode": "delete",
         "params": {},
@@ -376,7 +377,7 @@ def test_cal_select_picks_event_and_shows_confirm():
         asyncio.run(main.handle_callback(update, None))
     mock_show.assert_awaited_once()
     assert mock_show.await_args[0][1] is event
-    assert 123 not in main._last_calendar_search
+    assert 123 not in app_state.last_calendar_search
 
 
 def test_calendar_create_roundtrip():
@@ -387,8 +388,8 @@ def test_calendar_create_roundtrip():
         asyncio.run(
             main.handle_calendar(123, "x", mode="write", title="Zahnarzt", start=start)
         )
-    assert main._pending_calendar_ops[123]["type"] == "create"
-    assert "staged_at" in main._pending_calendar_ops[123]
+    assert app_state.pending_calendar_ops[123]["type"] == "create"
+    assert "staged_at" in app_state.pending_calendar_ops[123]
 
     update = _make_cbq("cal:action:confirm")
     with patch("agents.main.calendar_agent") as mock_cal:

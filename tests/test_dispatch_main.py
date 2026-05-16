@@ -4,14 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import agents.main as main
+import app_state
 
 
 @pytest.fixture(autouse=True)
 def clear_processed_updates():
     """Prevent dedup logic from skipping tests that share the same update_id."""
-    main.processed_updates.clear()
+    app_state.processed_updates.clear()
     yield
-    main.processed_updates.clear()
+    app_state.processed_updates.clear()
 
 
 def _make_update(text, chat_id=123, update_id=90001):

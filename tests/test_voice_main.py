@@ -2,10 +2,11 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import agents.main as main_module
+import app_state
 
 
 def test_handle_voice_transcribes_and_calls_process_text():
-    main_module.processed_updates.discard(8801)
+    app_state.processed_updates.discard(8801)
 
     mock_file = MagicMock()
     mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"fake_ogg"))
@@ -15,8 +16,14 @@ def test_handle_voice_transcribes_and_calls_process_text():
     mock_update.message.chat_id = 123
     mock_update.message.voice.get_file = AsyncMock(return_value=mock_file)
 
-    with patch("agents.main.transcribe", new_callable=AsyncMock, return_value="Was kostet Bitcoin?") as mock_transcribe, \
-         patch("agents.main._process_text", new_callable=AsyncMock) as mock_process:
+    with (
+        patch(
+            "agents.main.transcribe",
+            new_callable=AsyncMock,
+            return_value="Was kostet Bitcoin?",
+        ) as mock_transcribe,
+        patch("agents.main._process_text", new_callable=AsyncMock) as mock_process,
+    ):
         asyncio.run(main_module.handle_voice(mock_update, None))
 
     mock_transcribe.assert_called_once_with(bytes(b"fake_ogg"))
@@ -24,7 +31,7 @@ def test_handle_voice_transcribes_and_calls_process_text():
 
 
 def test_handle_voice_sends_error_on_transcription_failure():
-    main_module.processed_updates.discard(8802)
+    app_state.processed_updates.discard(8802)
 
     mock_file = MagicMock()
     mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"fake_ogg"))
@@ -35,7 +42,11 @@ def test_handle_voice_sends_error_on_transcription_failure():
     mock_update.message.voice.get_file = AsyncMock(return_value=mock_file)
     mock_update.message.reply_text = AsyncMock()
 
-    with patch("agents.main.transcribe", new_callable=AsyncMock, side_effect=RuntimeError("Leeres Transkript")):
+    with patch(
+        "agents.main.transcribe",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("Leeres Transkript"),
+    ):
         asyncio.run(main_module.handle_voice(mock_update, None))
 
     mock_update.message.reply_text.assert_called_once_with(
@@ -44,7 +55,7 @@ def test_handle_voice_sends_error_on_transcription_failure():
 
 
 def test_handle_voice_deduplicates():
-    main_module.processed_updates.discard(8803)
+    app_state.processed_updates.discard(8803)
 
     mock_file = MagicMock()
     mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"fake_ogg"))
@@ -54,8 +65,12 @@ def test_handle_voice_deduplicates():
     mock_update.message.chat_id = 123
     mock_update.message.voice.get_file = AsyncMock(return_value=mock_file)
 
-    with patch("agents.main.transcribe", new_callable=AsyncMock, return_value="Text") as mock_transcribe, \
-         patch("agents.main._process_text", new_callable=AsyncMock) as mock_process:
+    with (
+        patch(
+            "agents.main.transcribe", new_callable=AsyncMock, return_value="Text"
+        ) as mock_transcribe,
+        patch("agents.main._process_text", new_callable=AsyncMock) as mock_process,
+    ):
         asyncio.run(main_module.handle_voice(mock_update, None))
         asyncio.run(main_module.handle_voice(mock_update, None))
 

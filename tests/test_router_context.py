@@ -3,6 +3,8 @@ import pytest
 import time
 from unittest.mock import patch, MagicMock, AsyncMock
 
+import app_state
+
 
 @pytest.mark.asyncio
 async def test_router_has_no_calendar_names_cache():
@@ -76,7 +78,7 @@ async def test_low_confidence_triggers_clarification():
             new_callable=AsyncMock,
             return_value=low_confidence_result,
         ),
-        patch.object(main_mod, "processed_updates", new=set()),
+        patch.object(app_state, "processed_updates", new=set()),
     ):
         await main_mod.handle_message(fake_update, MagicMock())
 
