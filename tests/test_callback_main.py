@@ -139,3 +139,139 @@ def test_cal_action_confirm_fresh_op_executes():
         asyncio.run(main.handle_callback(update, None))
     mock_cal.delete_event.assert_called_once_with("e1")
     assert "abgesagt" in _edited(update)
+
+
+# --- Mail callback branches (characterization) ---
+
+
+def test_mail_cancel_discards_draft():
+    main._pending_mail_ops[123] = {"type": "compose", "staged_at": time.time()}
+    update = _make_cbq("mail:cancel")
+    asyncio.run(main.handle_callback(update, None))
+    assert 123 not in main._pending_mail_ops
+    assert "verworfen" in _edited(update)
+
+
+def test_mail_send_no_draft_warns():
+    update = _make_cbq("mail:send")
+    asyncio.run(main.handle_callback(update, None))
+    assert "Kein Entwurf" in _edited(update)
+
+
+def test_mail_action_confirm_no_op_warns():
+    update = _make_cbq("mail:action:confirm")
+    asyncio.run(main.handle_callback(update, None))
+    assert "Keine ausstehende Aktion" in _edited(update)
+
+
+@pytest.mark.parametrize(
+    "op_type,method,extra,expect",
+    [
+        ("delete", "delete", {}, "gelöscht"),
+        ("reply", "reply", {"reply_text": "ok"}, "Antwort gesendet"),
+        ("forward", "forward", {"forward_to": "x@y.de"}, "weitergeleitet"),
+    ],
+)
+def test_mail_action_confirm_executes(op_type, method, extra, expect):
+    main._pending_mail_ops[123] = {
+        "type": op_type,
+        "mail_id": "m1",
+        "subject": "S",
+        "sender": "X",
+        "staged_at": time.time(),
+        **extra,
+    }
+    update = _make_cbq("mail:action:confirm")
+    with patch("mail_agent.MailAgent") as MockAgent:
+        getattr(MockAgent.return_value, method).return_value = True
+        asyncio.run(main.handle_callback(update, None))
+    getattr(MockAgent.return_value, method).assert_called_once()
+    assert expect in _edited(update)
+
+
+def test_mail_action_confirm_move():
+    main._pending_mail_ops[123] = {
+        "type": "move",
+        "mail_id": "m1",
+        "subject": "S",
+        "sender": "X",
+        "destination_folder": "Steuern",
+        "staged_at": time.time(),
+    }
+    update = _make_cbq("mail:action:confirm")
+    with patch("mail_agent.MailAgent") as MockAgent:
+        folder = MagicMock()
+        folder.id = "f1"
+        MockAgent.return_value.find_folder_by_name.return_value = folder
+        MockAgent.return_value.move.return_value = True
+        asyncio.run(main.handle_callback(update, None))
+    MockAgent.return_value.move.assert_called_once_with("m1", "f1")
+    assert "verschoben" in _edited(update)
+
+
+def test_mail_action_cancel_clears_state():
+    main._pending_mail_ops[123] = {"type": "archive", "staged_at": time.time()}
+    main._last_mail_search[123] = {"mails": [], "timestamp": time.time()}
+    update = _make_cbq("mail:action:cancel")
+    asyncio.run(main.handle_callback(update, None))
+    assert 123 not in main._pending_mail_ops
+    assert 123 not in main._last_mail_search
+    assert "Abgebrochen" in _edited(update)
+
+
+def test_mail_select_expired_search_warns():
+    main._last_mail_search[123] = {
+        "mails": [MagicMock()],
+        "mode": "archive",
+        "params": {},
+        "timestamp": time.time() - 300,
+    }
+    update = _make_cbq("mail:select:0")
+    asyncio.run(main.handle_callback(update, None))
+    assert "abgelaufen" in _edited(update).lower()
+
+
+def test_mail_select_picks_mail_and_shows_confirm():
+    mail = MagicMock()
+    mail.id = "m1"
+    mail.subject = "S"
+    mail.sender_name = "X"
+    mail.sender_email = "x@y.de"
+    main._last_mail_search[123] = {
+        "mails": [mail],
+        "mode": "archive",
+        "params": {},
+        "timestamp": time.time(),
+    }
+    update = _make_cbq("mail:select:0")
+    with patch(
+        "agents.main._show_mail_action_confirm", new_callable=AsyncMock
+    ) as mock_show:
+        asyncio.run(main.handle_callback(update, None))
+    mock_show.assert_awaited_once()
+    assert mock_show.await_args[0][1] is mail
+    assert 123 not in main._last_mail_search
+
+
+def test_mail_action_roundtrip_archive():
+    """Stage via _show_mail_action_confirm → confirm via handle_callback."""
+    from zoneinfo import ZoneInfo
+
+    mail = MagicMock()
+    mail.id = "m99"
+    mail.subject = "Rechnung"
+    mail.sender_name = "Stadtwerke"
+    mail.sender_email = "sw@x.de"
+    mail.received = datetime(2026, 5, 1, 9, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+    with patch("agents.main.Bot") as MockBot:
+        MockBot.return_value.send_message = AsyncMock()
+        asyncio.run(main._show_mail_action_confirm(123, mail, "archive", {}))
+    assert main._pending_mail_ops[123]["type"] == "archive"
+    assert main._pending_mail_ops[123]["mail_id"] == "m99"
+    assert "staged_at" in main._pending_mail_ops[123]
+
+    update = _make_cbq("mail:action:confirm")
+    with patch("mail_agent.MailAgent") as MockAgent:
+        MockAgent.return_value.archive.return_value = True
+        asyncio.run(main.handle_callback(update, None))
+    MockAgent.return_value.archive.assert_called_once_with("m99")
