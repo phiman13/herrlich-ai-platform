@@ -61,7 +61,6 @@ agents/
   weather_agent.py      Open-Meteo API
   profile_agent.py      Nutzerprofil-Kontext laden
   vps.py                Workspace-Verwaltung (Projektliste etc.)
-  ntfy_agent.py         ntfy.sh Push-Notifications (angelegt, nicht aktiv)
   requirements.txt      Python-Abhängigkeiten
   claude-settings.json  Claude Code Permission-Config (VPS)
 
@@ -98,7 +97,6 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 | `WEATHER_LAT` | ❌ | Breitengrad Heimatort (Default: `48.14`) |
 | `WEATHER_LON` | ❌ | Längengrad Heimatort (Default: `11.58`) |
 | `WEATHER_LOCATION_NAME` | ❌ | Anzeigename Heimatort (Default: `Tutzing`) |
-| `NTFY_REMINDER_TOPIC` | ❌ | ntfy.sh Topic (noch nicht aktiv) |
 
 ---
 
@@ -353,5 +351,3 @@ MS Graph API · Open-Meteo · Groq Whisper · systemd · Caddy
 - **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
 - **`.venv`** liegt im Projekt-Root — auf VPS ist es `/opt/jarvis/venv/`
 - **VPS-Code** unter `/opt/herrlich-ai-platform/` (git clone), rsync synchronisiert `agents/` → `/opt/jarvis/` nach jedem Pull; systemd liest Secrets aus `/var/lib/jarvis/.env`
-- **`db 2.py`** — veraltete Kopie, ignorieren
-- **`ntfy_agent.py`** — angelegt aber nicht in Betrieb (kein aktiver Intent)
