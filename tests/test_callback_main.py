@@ -165,14 +165,20 @@ def test_mail_action_confirm_no_op_warns():
 
 
 @pytest.mark.parametrize(
-    "op_type,method,extra,expect",
+    "op_type,method,extra,expected_args,expect",
     [
-        ("delete", "delete", {}, "gelöscht"),
-        ("reply", "reply", {"reply_text": "ok"}, "Antwort gesendet"),
-        ("forward", "forward", {"forward_to": "x@y.de"}, "weitergeleitet"),
+        ("delete", "delete", {}, ("m1",), "gelöscht"),
+        ("reply", "reply", {"reply_text": "ok"}, ("m1", "ok"), "Antwort gesendet"),
+        (
+            "forward",
+            "forward",
+            {"forward_to": "x@y.de"},
+            ("m1", ["x@y.de"], ""),
+            "weitergeleitet",
+        ),
     ],
 )
-def test_mail_action_confirm_executes(op_type, method, extra, expect):
+def test_mail_action_confirm_executes(op_type, method, extra, expected_args, expect):
     main._pending_mail_ops[123] = {
         "type": op_type,
         "mail_id": "m1",
@@ -185,7 +191,7 @@ def test_mail_action_confirm_executes(op_type, method, extra, expect):
     with patch("mail_agent.MailAgent") as MockAgent:
         getattr(MockAgent.return_value, method).return_value = True
         asyncio.run(main.handle_callback(update, None))
-    getattr(MockAgent.return_value, method).assert_called_once()
+    getattr(MockAgent.return_value, method).assert_called_once_with(*expected_args)
     assert expect in _edited(update)
 
 
