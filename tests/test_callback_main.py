@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import agents.main as main
-import agents.calendar_handler as calendar_handler
+import calendar_handler
 import app_state
 
 
@@ -385,7 +385,7 @@ def test_cal_select_picks_event_and_shows_confirm():
 def test_calendar_create_roundtrip():
     """Stage via handle_calendar write → confirm via handle_callback."""
     start = datetime(2026, 6, 1, 10, 0)
-    with patch("agents.calendar_handler.Bot") as MockBot:
+    with patch("calendar_handler.Bot") as MockBot:
         MockBot.return_value.send_message = AsyncMock()
         asyncio.run(
             calendar_handler.handle_calendar(
