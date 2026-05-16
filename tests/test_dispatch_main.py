@@ -53,7 +53,7 @@ def test_research_intent_calls_ask_claude_with_web_search():
         patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask,
-        patch("dispatch.send_typing", new_callable=AsyncMock),
+        patch("app_state.send_typing", new_callable=AsyncMock),
     ):
         asyncio.run(main.handle_message(_make_update("Recherchiere ESG 2026"), None))
     assert mock_ask.await_args.kwargs.get("use_web_search") is True
@@ -69,7 +69,7 @@ def test_work_intent_uses_sonnet():
         patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask,
-        patch("dispatch.send_typing", new_callable=AsyncMock),
+        patch("app_state.send_typing", new_callable=AsyncMock),
     ):
         asyncio.run(main.handle_message(_make_update("Fass das zusammen"), None))
     assert mock_ask.await_args.kwargs.get("model") == "claude-sonnet-4-6"

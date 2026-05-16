@@ -277,7 +277,7 @@ with patch("agents.mail_agent.get_access_token", return_value="tok"), \
 | `send_briefing` | Mo–Fr 07:00 Berlin | Morgenbriefing | Haiku |
 | `check_important_mails` | 09:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
 | `check_important_mails` | 14:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
-| `send_task_reminder` | 14:00 täglich | Überfällige Tasks | — |
+| `send_task_reminder` | 10:00 täglich | Überfällige Tasks | — |
 | `send_weekly_review` | Fr 17:00 | Wochenrückblick | Sonnet |
 
 Jobs werden in `scheduler.db` (SQLite) persistiert — überleben Neustarts.

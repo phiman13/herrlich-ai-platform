@@ -5,6 +5,7 @@ import asyncio
 import anthropic
 from telegram import Bot
 import app_state
+from app_state import _keep_typing
 
 logger = logging.getLogger("jarvis.chat_handler")
 
@@ -51,8 +52,6 @@ async def ask_claude(
 async def handle_research(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from dispatch import _keep_typing
-
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
     try:
@@ -78,8 +77,6 @@ async def handle_research(
 async def handle_work(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from dispatch import _keep_typing
-
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
     try:
@@ -103,8 +100,6 @@ async def handle_work(
 async def handle_personal(
     chat_id: int, text: str, memory_context: str, history: list[dict]
 ) -> str:
-    from dispatch import _keep_typing
-
     personal_system = (
         "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
         "Deine tatsächlichen Fähigkeiten:\n"

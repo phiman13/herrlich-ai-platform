@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from telegram import Bot
 from calendar_agent import CalendarAgent, BERLIN
 import app_state
+from app_state import _conv_complete
 from formatting import format_calendar_response, _md_safe
 
 logger = logging.getLogger("jarvis.calendar_handler")
@@ -272,8 +273,6 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
 
 
 async def handle_calendar_intent(chat_id: int, text: str, params: dict) -> None:
-    from dispatch import _conv_complete
-
     mode = params.get("mode", "read")
     if mode in ("update", "delete"):
         await handle_calendar_modify(chat_id, mode, params)

@@ -10,8 +10,8 @@ def test_send_typing_calls_send_chat_action():
     mock_bot = MagicMock()
     mock_bot.send_chat_action = AsyncMock()
 
-    with patch("dispatch.Bot", return_value=mock_bot):
-        asyncio.run(main_module.send_typing(chat_id=123))
+    with patch("app_state.Bot", return_value=mock_bot):
+        asyncio.run(app_state.send_typing(chat_id=123))
 
     mock_bot.send_chat_action.assert_called_once()
     call_kwargs = mock_bot.send_chat_action.call_args.kwargs
@@ -27,8 +27,8 @@ def test_keep_typing_stops_on_event():
 
     async def run():
         stop = asyncio.Event()
-        with patch("dispatch.Bot", return_value=mock_bot):
-            task = asyncio.create_task(main_module._keep_typing(123, stop))
+        with patch("app_state.Bot", return_value=mock_bot):
+            task = asyncio.create_task(app_state._keep_typing(123, stop))
             await asyncio.sleep(0.05)
             stop.set()
             await task
@@ -51,7 +51,7 @@ def test_personal_intent_uses_sonnet():
         with patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
-            with patch("dispatch.send_typing", new_callable=AsyncMock):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 77771
                 update.message.text = "Hallo"
@@ -117,7 +117,7 @@ def test_history_saved_after_personal_intent():
             new_callable=AsyncMock,
             return_value="Antwort auf Hallo",
         ):
-            with patch("dispatch.send_typing", new_callable=AsyncMock):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 77772
                 update.message.text = "Hallo"
@@ -186,7 +186,7 @@ def test_profile_content_injected_for_personal_intent():
         with patch(
             "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
         ) as mock_ask:
-            with patch("dispatch.send_typing", new_callable=AsyncMock):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 88881
                 update.message.text = "Was soll ich tun?"

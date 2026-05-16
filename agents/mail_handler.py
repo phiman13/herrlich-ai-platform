@@ -8,6 +8,7 @@ from datetime import datetime
 from telegram import Bot
 
 import app_state
+from app_state import _conv_complete
 from calendar_agent import BERLIN
 from formatting import format_mail_list, format_folder_list
 
@@ -300,8 +301,6 @@ async def _show_mail_action_confirm(
 
 
 async def handle_mail_intent(chat_id: int, text: str, params: dict) -> None:
-    from dispatch import _conv_complete
-
     await handle_mail(chat_id=chat_id, text=text, params=params)
     mail_mode = params.get("mode", "")
     _conv_complete(chat_id, f"Mail {mail_mode} ausgeführt")
