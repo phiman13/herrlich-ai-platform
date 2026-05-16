@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-import agents.main as main
+from github_webhook import github_webhook
 
 _SECRET = "testsecret"
 
@@ -36,7 +36,7 @@ def test_invalid_signature_rejected():
     )
     with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": _SECRET}):
         with pytest.raises(HTTPException) as exc:
-            asyncio.run(main.github_webhook(req))
+            asyncio.run(github_webhook(req))
     assert exc.value.status_code == 403
 
 
@@ -45,7 +45,7 @@ def test_missing_signature_rejected_when_secret_set():
     req = _make_request(body, {"X-GitHub-Event": "push"})
     with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": _SECRET}):
         with pytest.raises(HTTPException) as exc:
-            asyncio.run(main.github_webhook(req))
+            asyncio.run(github_webhook(req))
     assert exc.value.status_code == 403
 
 
@@ -54,7 +54,7 @@ def test_no_secret_skips_validation():
     body = _push_body(repo="not-configured")
     req = _make_request(body, {"X-GitHub-Event": "push"})
     with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": ""}):
-        result = asyncio.run(main.github_webhook(req))
+        result = asyncio.run(github_webhook(req))
     # kein 403 (kein HTTPException) — der Request lief bis zum Repo-Skip durch
     assert result["ok"] is True
     assert result["skipped"].startswith("repo")
@@ -76,7 +76,7 @@ def test_valid_signature_processes_push():
         ),
         patch("subprocess.Popen"),
     ):
-        result = asyncio.run(main.github_webhook(req))
+        result = asyncio.run(github_webhook(req))
     assert result["ok"] is True
     assert result["repo"] == "immo-radar"
     assert result["pulled"] is True
@@ -88,5 +88,5 @@ def test_non_push_event_skipped():
         body, {"X-Hub-Signature-256": _sign(body), "X-GitHub-Event": "ping"}
     )
     with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": _SECRET}):
-        result = asyncio.run(main.github_webhook(req))
+        result = asyncio.run(github_webhook(req))
     assert result.get("skipped")
