@@ -5,20 +5,18 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 
 @pytest.mark.asyncio
-async def test_get_calendar_names_reads_env():
-    with patch.dict("os.environ", {"CALENDAR_WHITELIST": "Privat, Arbeit, Sport"}):
-        import importlib
-        import agents.router as router_mod
-        router_mod._calendar_names_cache = []  # reset cache
-        names = await router_mod._get_calendar_names()
-    assert "Privat" in names
-    assert "Arbeit" in names
-    assert "Sport" in names
+async def test_router_has_no_calendar_names_cache():
+    """_get_calendar_names and _calendar_names_cache were removed in Outlook migration."""
+    import agents.router as router_mod
+
+    assert not hasattr(router_mod, "_get_calendar_names")
+    assert not hasattr(router_mod, "_calendar_names_cache")
 
 
 @pytest.mark.asyncio
 async def test_get_mail_folder_names_returns_cached():
     import agents.router as router_mod
+
     router_mod._mail_folders_cache = (["Posteingang", "Steuern"], time.time())
     names = await router_mod._get_mail_folder_names()
     assert "Posteingang" in names
@@ -26,14 +24,31 @@ async def test_get_mail_folder_names_returns_cached():
 
 
 @pytest.mark.asyncio
-async def test_build_system_prompt_includes_calendar_and_mail():
+async def test_build_system_prompt_includes_outlook_calendar_and_mail():
     import agents.router as router_mod
-    with patch.object(router_mod, "_get_project_list", new_callable=AsyncMock, return_value=["recipe-app"]), \
-         patch.object(router_mod, "_get_todo_list_names", new_callable=AsyncMock, return_value=["Einkaufen"]), \
-         patch.object(router_mod, "_get_calendar_names", new_callable=AsyncMock, return_value=["Privat"]), \
-         patch.object(router_mod, "_get_mail_folder_names", new_callable=AsyncMock, return_value=["Steuern"]):
+
+    with (
+        patch.object(
+            router_mod,
+            "_get_project_list",
+            new_callable=AsyncMock,
+            return_value=["recipe-app"],
+        ),
+        patch.object(
+            router_mod,
+            "_get_todo_list_names",
+            new_callable=AsyncMock,
+            return_value=["Einkaufen"],
+        ),
+        patch.object(
+            router_mod,
+            "_get_mail_folder_names",
+            new_callable=AsyncMock,
+            return_value=["Steuern"],
+        ),
+    ):
         prompt = await router_mod._build_system_prompt()
-    assert "Privat" in prompt
+    assert "Outlook-Kalender" in prompt
     assert "Steuern" in prompt
 
 
@@ -55,10 +70,19 @@ async def test_low_confidence_triggers_clarification():
     fake_update.message.chat_id = 12345
     fake_update.message.reply_text = AsyncMock()
 
-    with patch("agents.main.route_with_llm", new_callable=AsyncMock, return_value=low_confidence_result), \
-         patch.object(main_mod, "processed_updates", new=set()):
+    with (
+        patch(
+            "agents.main.route_with_llm",
+            new_callable=AsyncMock,
+            return_value=low_confidence_result,
+        ),
+        patch.object(main_mod, "processed_updates", new=set()),
+    ):
         await main_mod.handle_message(fake_update, MagicMock())
 
     fake_update.message.reply_text.assert_called_once()
     call_text = fake_update.message.reply_text.call_args[0][0]
-    assert any(kw in call_text.lower() for kw in ("nicht sicher", "präzisier", "klär", "genauer"))
+    assert any(
+        kw in call_text.lower()
+        for kw in ("nicht sicher", "präzisier", "klär", "genauer")
+    )

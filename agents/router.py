@@ -25,9 +25,6 @@ _project_list_cache: list[str] = []
 _todo_lists_cache: tuple[list[str], float] = ([], 0.0)
 _TODO_CACHE_TTL = 1800  # 30 min
 
-# calendar names come from env — no network call needed
-_calendar_names_cache: list[str] = []
-
 # mail folder names cache: (value, fetched_at)
 _mail_folders_cache: tuple[list[str], float] = ([], 0.0)
 _MAIL_FOLDER_CACHE_TTL = 1800  # 30 min
@@ -68,16 +65,6 @@ async def _get_todo_list_names() -> list[str]:
     return names
 
 
-async def _get_calendar_names() -> list[str]:
-    global _calendar_names_cache
-    if not _calendar_names_cache:
-        import os as _os
-
-        raw = _os.environ.get("CALENDAR_WHITELIST", "")
-        _calendar_names_cache = [w.strip() for w in raw.split(",") if w.strip()]
-    return _calendar_names_cache
-
-
 async def _get_mail_folder_names() -> list[str]:
     global _mail_folders_cache
     names, fetched_at = _mail_folders_cache
@@ -111,8 +98,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
 
 ## Verfügbare Intents
 
-1. "calendar" — Fragen zum Kalender (Apple Calendar via CalDAV).
-   Verfügbare Kalender: {CALENDAR_NAMES}
+1. "calendar" — Fragen zum Outlook-Kalender.
 
    Beispiele:
    - "Was habe ich heute?" → mode=read, kind=today
@@ -125,7 +111,6 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - end: ISO-8601 datetime oder null (bei mode=write und null → start + 1 Stunde)
    - label: deutsche Beschreibung des Zeitfensters (nur bei mode=read)
    - title: string (Termin-Titel, nur bei mode=write)
-   - calendar_name: string oder null (Ziel-Kalender, einer aus: {CALENDAR_NAMES}, nur bei mode=write)
 
    WICHTIG: Heute ist {HEUTE_ISO}. Bei mode=read: Berechne start/end relativ zu diesem Datum, in Europe/Berlin Zeitzone. Bei "today" / "tomorrow" / "week" / "next" können start/end null sein. Bei "range" oder "specific_day" MUSS start/end gesetzt sein. Bei mode=write: start MUSS gesetzt sein. end=null bedeutet start+1h.
 
@@ -247,7 +232,7 @@ _SYSTEM_TEMPLATE = """Du bist der Intent-Router von Jarvis, einem persönlichen 
    - mode: "list" | "delete"
    - query: string oder null (was gelöscht werden soll; null = neueste Erinnerung)
 
-11. "reminder_write" — Apple Reminder / Erinnerung erstellen.
+11. "reminder_write" — Erinnerung in MS To Do erstellen.
    Beispiele: "Erinnere mich morgen an den Anruf", "Erstelle eine Erinnerung: Paket abholen am Freitag"
 
    Parameter:
@@ -288,21 +273,18 @@ _FALLBACK = {
 
 async def _build_system_prompt() -> str:
     heute = datetime.now(BERLIN).strftime("%Y-%m-%d")
-    project_list, todo_names, calendar_names, mail_folders = await asyncio.gather(
+    project_list, todo_names, mail_folders = await asyncio.gather(
         _get_project_list(),
         _get_todo_list_names(),
-        _get_calendar_names(),
         _get_mail_folder_names(),
     )
     projects_str = ", ".join(project_list) if project_list else "recipe-app"
     todo_str = ", ".join(todo_names) if todo_names else "(nicht verfügbar)"
-    calendar_str = ", ".join(calendar_names) if calendar_names else "(nicht verfügbar)"
     mail_str = ", ".join(mail_folders) if mail_folders else "(nicht verfügbar)"
     return (
         _SYSTEM_TEMPLATE.replace("{HEUTE_ISO}", heute)
         .replace("{PROJECT_LIST}", projects_str)
         .replace("{TODO_LISTS}", todo_str)
-        .replace("{CALENDAR_NAMES}", calendar_str)
         .replace("{MAIL_FOLDERS}", mail_str)
     )
 
