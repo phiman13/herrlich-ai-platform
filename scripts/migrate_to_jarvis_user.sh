@@ -84,6 +84,24 @@ WantedBy=multi-user.target
 EOF
 echo "[OK] $SERVICE_FILE aktualisiert"
 
+# 7b. Sudoers — jarvis darf das claude-Workspace per `sudo -u claude` bedienen.
+#     vps.py run_as_claude() ruft ls/cat/git/claude/cp als claude auf. Ohne
+#     diese Regel ist der coding-Intent als unprivilegierter jarvis-User
+#     komplett blockiert (als root lief es ohne sudoers-Eintrag).
+SUDOERS_FILE="/etc/sudoers.d/jarvis-claude"
+cat > /tmp/jarvis-claude.sudo <<'EOF'
+jarvis ALL=(claude) NOPASSWD: /usr/bin/ls, /usr/bin/cat, /usr/bin/git, /usr/bin/claude, /usr/bin/cp
+EOF
+if visudo -cf /tmp/jarvis-claude.sudo; then
+  install -m 0440 -o root -g root /tmp/jarvis-claude.sudo "$SUDOERS_FILE"
+  rm -f /tmp/jarvis-claude.sudo
+  echo "[OK] sudoers-Drop-in $SUDOERS_FILE angelegt"
+else
+  rm -f /tmp/jarvis-claude.sudo
+  echo "[FEHLER] sudoers-Syntax ungültig — Drop-in NICHT installiert"
+  exit 1
+fi
+
 # 8. Reload + Restart
 systemctl daemon-reload
 systemctl restart jarvis

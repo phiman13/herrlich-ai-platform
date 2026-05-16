@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-import pwd
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger("jarvis.vps")
@@ -21,7 +21,11 @@ async def run_as_claude(cmd: list[str], cwd: str | None = None) -> tuple[int, st
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-        return proc.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
+        return (
+            proc.returncode,
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+        )
     except asyncio.TimeoutError:
         logger.error(f"Timeout running {cmd}")
         return -1, "", "timeout"
@@ -53,7 +57,9 @@ async def list_projects() -> list[str]:
     rc, stdout, _ = await run_as_claude(["ls", WORKSPACE])
     if rc != 0:
         return []
-    return sorted([p.strip() for p in stdout.splitlines() if p.strip() and not p.startswith(".")])
+    return sorted(
+        [p.strip() for p in stdout.splitlines() if p.strip() and not p.startswith(".")]
+    )
 
 
 async def read_file(project: str, filename: str) -> str | None:
@@ -84,7 +90,9 @@ async def git_pull(project: str) -> bool:
     return rc == 0
 
 
-async def write_file_and_commit(project: str, filename: str, content: str, commit_msg: str) -> bool:
+async def write_file_and_commit(
+    project: str, filename: str, content: str, commit_msg: str
+) -> bool:
     """Write a file and commit it. Used for backlog edits."""
     cwd = _safe_cwd(project)
     if not cwd:
@@ -95,17 +103,26 @@ async def write_file_and_commit(project: str, filename: str, content: str, commi
         logger.warning(f"Path traversal attempt: {project}/{filename}")
         return False
 
+    # Jarvis runs unprivileged and cannot write into claude's workspace
+    # directly (/home/claude is drwxr-x---). Stage the content in a temp file,
+    # then copy it into place AS claude via sudo — keeps the file claude-owned.
     try:
-        with open(path, "w") as f:
-            f.write(content)
-        try:
-            pw = pwd.getpwnam(CLAUDE_USER)
-            os.chown(path, pw.pw_uid, pw.pw_gid)
-        except KeyError:
-            logger.error(f"User '{CLAUDE_USER}' not found on system")
-            return False
+        with tempfile.NamedTemporaryFile("w", suffix=".jarvis", delete=False) as tf:
+            tf.write(content)
+            tmp_path = tf.name
+        os.chmod(tmp_path, 0o644)  # claude (running cp) must be able to read it
     except Exception as e:
         logger.error(f"write_file failed: {e}")
+        return False
+    try:
+        rc, _, err = await run_as_claude(["cp", tmp_path, path])
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    if rc != 0:
+        logger.error(f"cp to workspace failed: {err}")
         return False
 
     rc, _, _ = await run_as_claude(["git", "add", filename], cwd=cwd)

@@ -1,7 +1,14 @@
 import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
-from agents.vps import read_file, list_projects, git_log, git_pull, write_file_and_commit, git_push
+from agents.vps import (
+    read_file,
+    list_projects,
+    git_log,
+    git_pull,
+    write_file_and_commit,
+    git_push,
+)
 
 
 def test_list_projects_parses_output():
@@ -78,17 +85,16 @@ async def test_git_push_failure():
 
 
 def test_write_file_and_commit_success():
-    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock_run, \
-         patch("builtins.open", create=True) as mock_open, \
-         patch("agents.vps.os.chown") as mock_chown, \
-         patch("agents.vps.pwd.getpwnam") as mock_pwd:
+    # New impl: stage content in a temp file, then `cp` it into the workspace
+    # AS claude via run_as_claude, then git add + commit. tempfile runs for
+    # real; only run_as_claude (the privileged bridge) is mocked.
+    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = (0, "", "")
-        mock_open.return_value.__enter__ = lambda s: s
-        mock_open.return_value.__exit__ = lambda s, *a: None
-        mock_open.return_value.write = lambda c: None
-        mock_pwd.return_value.pw_uid = 1000
-        mock_pwd.return_value.pw_gid = 1000
         result = asyncio.run(
             write_file_and_commit("recipe-app", "BACKLOG.md", "content", "msg")
         )
     assert result is True
+    calls = [c.args[0] for c in mock_run.call_args_list]
+    assert any(c[0] == "cp" for c in calls)
+    assert ["git", "add", "BACKLOG.md"] in calls
+    assert calls[-1][:2] == ["git", "commit"]
