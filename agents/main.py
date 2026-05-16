@@ -825,6 +825,321 @@ async def start(update, context):
     )
 
 
+async def handle_calendar_intent(chat_id: int, text: str, params: dict) -> None:
+    mode = params.get("mode", "read")
+    if mode in ("update", "delete"):
+        await handle_calendar_modify(chat_id, mode, params)
+        _conv_complete(chat_id, f"Termin-Aktion ({mode}) angefragt")
+        return
+    kind = params.get("kind")
+    start_str = params.get("start")
+    end_str = params.get("end")
+    start = datetime.fromisoformat(start_str) if start_str else None
+    end = datetime.fromisoformat(end_str) if end_str else None
+    title = params.get("title")
+    await handle_calendar(
+        chat_id=chat_id,
+        text=text,
+        kind=kind,
+        start=start,
+        end=end,
+        mode=mode,
+        title=title,
+    )
+    cal_summary = (
+        f"Termin-Erstellung angefragt: {title}"
+        if mode == "write" and title
+        else "Kalender angezeigt"
+    )
+    _conv_complete(chat_id, cal_summary)
+
+
+async def handle_mail_intent(chat_id: int, text: str, params: dict) -> None:
+    await handle_mail(chat_id=chat_id, text=text, params=params)
+    mail_mode = params.get("mode", "")
+    _conv_complete(chat_id, f"Mail {mail_mode} ausgeführt")
+
+
+async def handle_research(
+    chat_id: int, text: str, memory_context: str, history: list[dict]
+) -> str:
+    stop = asyncio.Event()
+    typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+    try:
+        answer = await ask_claude(
+            chat_id=chat_id,
+            system=memory_context
+            + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
+            user=text,
+            model="claude-sonnet-4-6",
+            use_web_search=True,
+            history=history,
+        )
+    finally:
+        stop.set()
+        await typing_task
+    if _memory_agent:
+        asyncio.create_task(_memory_agent.extract(text, answer, source="research"))
+    return answer
+
+
+async def handle_coding(chat_id: int, text: str, params: dict, update: Update) -> None:
+    mode = params.get("mode", "action")
+    project = params.get("project")
+
+    if not project:
+        projects = await list_projects()
+        project = projects[0] if projects else "recipe-app"
+
+    if mode == "query":
+        query_type = params.get("query_type", "backlog")
+        await update.message.reply_text("🔍 Lese...")
+        query_result = await handle_coding_query(project, query_type)
+        await update.message.reply_text(
+            f"📁 *{project}* — {query_type}\n\n{query_result[:4000]}",
+            parse_mode="Markdown",
+        )
+
+    elif mode == "backlog_write":
+        item = params.get("backlog_item", text)
+        priority = params.get("backlog_priority", "P1")
+        success = await add_backlog_item(project, item, priority)
+        if success:
+            await update.message.reply_text(
+                f"✅ Backlog-Item hinzugefügt in *{project}*:\n_{item}_",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text("❌ Konnte Backlog nicht aktualisieren.")
+
+    else:  # action
+        asyncio.create_task(run_coding_action(text, project, chat_id))
+    _conv_complete(chat_id, f"Coding {mode} ({project})")
+
+
+async def handle_reminder_write(chat_id: int, params: dict, update: Update) -> None:
+    title = params.get("title", "")
+    due_date_str = params.get("due_date")
+    due_time_str = params.get("due_time")
+    list_name = params.get("list_name") or os.environ.get("REMINDER_TODO_LIST", "Tasks")
+    if not title:
+        await update.message.reply_text("Kein Titel angegeben.")
+        return
+    try:
+        ok = await asyncio.to_thread(
+            add_task, list_name, title, due_date_str, due_time_str
+        )
+        if ok:
+            due_str = (
+                f" (fällig: {due_date_str}{' ' + due_time_str if due_time_str else ''})"
+                if due_date_str
+                else ""
+            )
+            msg = f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
+            await update.message.reply_text(msg)
+            _conv_complete(chat_id, msg)
+        else:
+            await update.message.reply_text(
+                f"❌ Liste '{list_name}' nicht gefunden. Verfügbare Listen mit 'Zeig mir alle To-Do-Listen'."
+            )
+            _conv_complete(chat_id, f"Erinnerung '{title}' nicht erstellt")
+    except Exception as e:
+        logger.exception("reminder_write fehlgeschlagen")
+        await update.message.reply_text(
+            f"❌ Erinnerung konnte nicht erstellt werden: {e}"
+        )
+        _conv_complete(chat_id, "Erinnerung fehlgeschlagen")
+    return
+
+
+async def handle_work(
+    chat_id: int, text: str, memory_context: str, history: list[dict]
+) -> str:
+    stop = asyncio.Event()
+    typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+    try:
+        answer = await ask_claude(
+            chat_id=chat_id,
+            system=memory_context
+            + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
+            user=text,
+            model="claude-sonnet-4-6",
+            use_web_search=True,
+            history=history,
+        )
+    finally:
+        stop.set()
+        await typing_task
+    if _memory_agent:
+        asyncio.create_task(_memory_agent.extract(text, answer, source="work"))
+    return answer
+
+
+async def handle_news(chat_id: int, update: Update) -> None:
+    await update.message.reply_text("📰 Lade AI-News...")
+    news = await asyncio.to_thread(get_ai_news, 48, 10)
+    await update.message.reply_text(
+        f"📰 *AI NEWS — letzte 48h*\n\n{news or 'Keine News gefunden.'}",
+        parse_mode="Markdown",
+    )
+    _conv_complete(chat_id, "AI-News angezeigt")
+
+
+async def handle_tasks(chat_id: int, params: dict, update: Update) -> None:
+    mode = params.get("mode", "read")
+    list_name = params.get("list_name")
+    item = params.get("item")
+
+    if mode == "read":
+        task_result = await asyncio.to_thread(get_tasks, list_name)
+        await update.message.reply_text(
+            task_result or "Keine offenen Tasks.", parse_mode="Markdown"
+        )
+
+    elif mode == "write" and item:
+        if not list_name:
+            await update.message.reply_text("Welche Liste? (z.B. 'Einkaufsliste')")
+        else:
+            success = await asyncio.to_thread(add_task, list_name, item)
+            if success:
+                await update.message.reply_text(
+                    f"✅ '{item}' zu *{list_name}* hinzugefügt.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text("❌ Konnte Task nicht hinzufügen.")
+
+    elif mode == "complete" and item:
+        if not list_name:
+            await update.message.reply_text("Welche Liste?")
+        else:
+            success = await asyncio.to_thread(complete_task, list_name, item)
+            if success:
+                await update.message.reply_text(
+                    f"✅ '{item}' in *{list_name}* als erledigt markiert.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Task nicht gefunden oder bereits erledigt."
+                )
+
+    elif mode == "create_list" and list_name:
+        success = await asyncio.to_thread(create_list, list_name)
+        if success:
+            router._todo_lists_cache = ([], 0.0)
+            await update.message.reply_text(
+                f"✅ Liste *{list_name}* angelegt.", parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text("❌ Liste konnte nicht angelegt werden.")
+
+    elif mode == "delete_list" and list_name:
+        success = await asyncio.to_thread(delete_list, list_name)
+        if success:
+            router._todo_lists_cache = ([], 0.0)
+            await update.message.reply_text(
+                f"✅ Liste *{list_name}* gelöscht.", parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ Liste '{list_name}' nicht gefunden oder konnte nicht gelöscht werden."
+            )
+
+    elif mode == "rename_list":
+        new_name = params.get("new_name")
+        if not list_name or not new_name:
+            await update.message.reply_text("Bitte alter und neuer Listenname angeben.")
+        else:
+            success = await asyncio.to_thread(rename_list, list_name, new_name)
+            if success:
+                router._todo_lists_cache = ([], 0.0)
+                await update.message.reply_text(
+                    f"✅ Liste *{list_name}* → *{new_name}* umbenannt.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen."
+                )
+    tasks_list_label = list_name or "Tasks"
+    _conv_complete(chat_id, f"Tasks {mode} ({tasks_list_label})")
+
+
+async def handle_weather(chat_id: int, params: dict, update: Update) -> None:
+    period = params.get("period", "today")
+    time_of_day = params.get("time_of_day")
+    location = params.get("location")
+    period_label = {
+        "today": "heute",
+        "tomorrow": "morgen",
+        "week": "diese Woche",
+    }.get(period, period)
+    weather = await asyncio.to_thread(get_weather, period, time_of_day, location)
+    await update.message.reply_text(
+        f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
+    )
+    _conv_complete(chat_id, f"Wetter {period_label} angezeigt")
+
+
+async def handle_briefing(chat_id: int, update: Update) -> None:
+    await update.message.reply_text("⏳ Briefing wird erstellt...")
+    msg = await build_briefing()
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    _conv_complete(chat_id, "Morgenbriefing angezeigt")
+
+
+async def handle_memory(chat_id: int, params: dict, update: Update) -> None:
+    mode = params.get("mode", "list")
+    query = params.get("query")
+    if not _memory_agent:
+        await update.message.reply_text("Memory-System nicht initialisiert.")
+        return
+    if mode == "delete":
+        msg = await _memory_agent.delete_memory(query)
+    else:
+        msg = await _memory_agent.list_memories()
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    _conv_complete(chat_id, f"Erinnerungen {mode}")
+
+
+async def handle_personal(
+    chat_id: int, text: str, memory_context: str, history: list[dict]
+) -> str:
+    personal_system = (
+        "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
+        "Deine tatsächlichen Fähigkeiten:\n"
+        "- Kalender: Outlook-Kalender lesen und Termine erstellen (mit Bestätigung)\n"
+        "- Mail: MS365-Posteingang lesen, durchsuchen, Mails schreiben\n"
+        "- Tasks: MS To Do Listen lesen und verwalten\n"
+        "- Wetter: aktuelle Wetterdaten und Vorhersage für Tutzing/München\n"
+        "- KI-News: aktuelle Nachrichten aus der AI-Welt\n"
+        "- Web-Recherche: aktuelle Informationen aus dem Internet\n"
+        "- Coding: Claude Code auf VPS-Projekten ausführen (recipe-app, immo-radar etc.)\n"
+        "- Morning Briefing: tägliche Zusammenfassung\n"
+        "- Erinnerungen: persönliche Fakten und Präferenzen speichern/abrufen\n\n"
+        "Wenn eine Frage zu einem dieser Bereiche gehört aber hierher geroutet wurde, sag das ehrlich "
+        "('Das war ein Routing-Fehler — frag nochmal klarer') statt zu halluzinieren. "
+        "Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte normal."
+    )
+    stop = asyncio.Event()
+    typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+    try:
+        answer = await ask_claude(
+            chat_id=chat_id,
+            system=memory_context + personal_system,
+            user=text,
+            model="claude-sonnet-4-6",
+            history=history,
+        )
+    finally:
+        stop.set()
+        await typing_task
+    if _memory_agent:
+        asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+    return answer
+
+
 async def _process_text(text: str, chat_id: int, update: Update) -> None:
     prev = _conv_to_prev_texts(chat_id)
     _conv_append_user(chat_id, text)
@@ -870,308 +1185,35 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
             logger.warning("History load failed: %s", e)
 
     if intent == "calendar":
-        mode = params.get("mode", "read")
-        if mode in ("update", "delete"):
-            await handle_calendar_modify(chat_id, mode, params)
-            _conv_complete(chat_id, f"Termin-Aktion ({mode}) angefragt")
-            return
-        kind = params.get("kind")
-        start_str = params.get("start")
-        end_str = params.get("end")
-        start = datetime.fromisoformat(start_str) if start_str else None
-        end = datetime.fromisoformat(end_str) if end_str else None
-        title = params.get("title")
-        await handle_calendar(
-            chat_id=chat_id,
-            text=text,
-            kind=kind,
-            start=start,
-            end=end,
-            mode=mode,
-            title=title,
-        )
-        cal_summary = (
-            f"Termin-Erstellung angefragt: {title}"
-            if mode == "write" and title
-            else "Kalender angezeigt"
-        )
-        _conv_complete(chat_id, cal_summary)
+        await handle_calendar_intent(chat_id, text, params)
         return
 
     if intent == "mail":
-        await handle_mail(chat_id=chat_id, text=text, params=params)
-        mail_mode = params.get("mode", "")
-        _conv_complete(chat_id, f"Mail {mail_mode} ausgeführt")
+        await handle_mail_intent(chat_id, text, params)
         return
 
     if intent == "research":
-        stop = asyncio.Event()
-        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
-        try:
-            answer = await ask_claude(
-                chat_id=chat_id,
-                system=memory_context
-                + "Du bist Jarvis, KI-Assistent fuer Philipp. Recherchiere im Internet und antworte praezise auf Deutsch mit Quellenangaben.",
-                user=text,
-                model="claude-sonnet-4-6",
-                use_web_search=True,
-                history=history,
-            )
-        finally:
-            stop.set()
-            await typing_task
-        if _memory_agent:
-            asyncio.create_task(_memory_agent.extract(text, answer, source="research"))
-
+        answer = await handle_research(chat_id, text, memory_context, history)
     elif intent == "coding":
-        mode = params.get("mode", "action")
-        project = params.get("project")
-
-        if not project:
-            projects = await list_projects()
-            project = projects[0] if projects else "recipe-app"
-
-        if mode == "query":
-            query_type = params.get("query_type", "backlog")
-            await update.message.reply_text("🔍 Lese...")
-            query_result = await handle_coding_query(project, query_type)
-            await update.message.reply_text(
-                f"📁 *{project}* — {query_type}\n\n{query_result[:4000]}",
-                parse_mode="Markdown",
-            )
-
-        elif mode == "backlog_write":
-            item = params.get("backlog_item", text)
-            priority = params.get("backlog_priority", "P1")
-            success = await add_backlog_item(project, item, priority)
-            if success:
-                await update.message.reply_text(
-                    f"✅ Backlog-Item hinzugefügt in *{project}*:\n_{item}_",
-                    parse_mode="Markdown",
-                )
-            else:
-                await update.message.reply_text(
-                    "❌ Konnte Backlog nicht aktualisieren."
-                )
-
-        else:  # action
-            asyncio.create_task(run_coding_action(text, project, chat_id))
-        _conv_complete(chat_id, f"Coding {mode} ({project})")
-
+        await handle_coding(chat_id, text, params, update)
     elif intent == "reminder_write":
-        title = params.get("title", "")
-        due_date_str = params.get("due_date")
-        due_time_str = params.get("due_time")
-        list_name = params.get("list_name") or os.environ.get(
-            "REMINDER_TODO_LIST", "Tasks"
-        )
-        if not title:
-            await update.message.reply_text("Kein Titel angegeben.")
-            return
-        try:
-            ok = await asyncio.to_thread(
-                add_task, list_name, title, due_date_str, due_time_str
-            )
-            if ok:
-                due_str = (
-                    f" (fällig: {due_date_str}{' ' + due_time_str if due_time_str else ''})"
-                    if due_date_str
-                    else ""
-                )
-                msg = f"✅ Erinnerung '{title}'{due_str} in To-Do gespeichert."
-                await update.message.reply_text(msg)
-                _conv_complete(chat_id, msg)
-            else:
-                await update.message.reply_text(
-                    f"❌ Liste '{list_name}' nicht gefunden. Verfügbare Listen mit 'Zeig mir alle To-Do-Listen'."
-                )
-                _conv_complete(chat_id, f"Erinnerung '{title}' nicht erstellt")
-        except Exception as e:
-            logger.exception("reminder_write fehlgeschlagen")
-            await update.message.reply_text(
-                f"❌ Erinnerung konnte nicht erstellt werden: {e}"
-            )
-            _conv_complete(chat_id, "Erinnerung fehlgeschlagen")
+        await handle_reminder_write(chat_id, params, update)
         return
-
     elif intent == "work":
-        stop = asyncio.Event()
-        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
-        try:
-            answer = await ask_claude(
-                chat_id=chat_id,
-                system=memory_context
-                + "Du bist Jarvis, KI-Assistent fuer Philipp (Projektmanager, Strategieberatung). Antworte praezise und strukturiert auf Deutsch.",
-                user=text,
-                model="claude-sonnet-4-6",
-                use_web_search=True,
-                history=history,
-            )
-        finally:
-            stop.set()
-            await typing_task
-        if _memory_agent:
-            asyncio.create_task(_memory_agent.extract(text, answer, source="work"))
-
+        answer = await handle_work(chat_id, text, memory_context, history)
     elif intent == "news":
-        await update.message.reply_text("📰 Lade AI-News...")
-        news = await asyncio.to_thread(get_ai_news, 48, 10)
-        await update.message.reply_text(
-            f"📰 *AI NEWS — letzte 48h*\n\n{news or 'Keine News gefunden.'}",
-            parse_mode="Markdown",
-        )
-        _conv_complete(chat_id, "AI-News angezeigt")
-
+        await handle_news(chat_id, update)
     elif intent == "tasks":
-        mode = params.get("mode", "read")
-        list_name = params.get("list_name")
-        item = params.get("item")
-
-        if mode == "read":
-            task_result = await asyncio.to_thread(get_tasks, list_name)
-            await update.message.reply_text(
-                task_result or "Keine offenen Tasks.", parse_mode="Markdown"
-            )
-
-        elif mode == "write" and item:
-            if not list_name:
-                await update.message.reply_text("Welche Liste? (z.B. 'Einkaufsliste')")
-            else:
-                success = await asyncio.to_thread(add_task, list_name, item)
-                if success:
-                    await update.message.reply_text(
-                        f"✅ '{item}' zu *{list_name}* hinzugefügt.",
-                        parse_mode="Markdown",
-                    )
-                else:
-                    await update.message.reply_text("❌ Konnte Task nicht hinzufügen.")
-
-        elif mode == "complete" and item:
-            if not list_name:
-                await update.message.reply_text("Welche Liste?")
-            else:
-                success = await asyncio.to_thread(complete_task, list_name, item)
-                if success:
-                    await update.message.reply_text(
-                        f"✅ '{item}' in *{list_name}* als erledigt markiert.",
-                        parse_mode="Markdown",
-                    )
-                else:
-                    await update.message.reply_text(
-                        "❌ Task nicht gefunden oder bereits erledigt."
-                    )
-
-        elif mode == "create_list" and list_name:
-            success = await asyncio.to_thread(create_list, list_name)
-            if success:
-                router._todo_lists_cache = ([], 0.0)
-                await update.message.reply_text(
-                    f"✅ Liste *{list_name}* angelegt.", parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text(
-                    "❌ Liste konnte nicht angelegt werden."
-                )
-
-        elif mode == "delete_list" and list_name:
-            success = await asyncio.to_thread(delete_list, list_name)
-            if success:
-                router._todo_lists_cache = ([], 0.0)
-                await update.message.reply_text(
-                    f"✅ Liste *{list_name}* gelöscht.", parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text(
-                    f"❌ Liste '{list_name}' nicht gefunden oder konnte nicht gelöscht werden."
-                )
-
-        elif mode == "rename_list":
-            new_name = params.get("new_name")
-            if not list_name or not new_name:
-                await update.message.reply_text(
-                    "Bitte alter und neuer Listenname angeben."
-                )
-            else:
-                success = await asyncio.to_thread(rename_list, list_name, new_name)
-                if success:
-                    router._todo_lists_cache = ([], 0.0)
-                    await update.message.reply_text(
-                        f"✅ Liste *{list_name}* → *{new_name}* umbenannt.",
-                        parse_mode="Markdown",
-                    )
-                else:
-                    await update.message.reply_text(
-                        f"❌ Liste '{list_name}' nicht gefunden oder Umbenennung fehlgeschlagen."
-                    )
-        tasks_list_label = list_name or "Tasks"
-        _conv_complete(chat_id, f"Tasks {mode} ({tasks_list_label})")
-
+        await handle_tasks(chat_id, params, update)
     elif intent == "weather":
-        period = params.get("period", "today")
-        time_of_day = params.get("time_of_day")
-        location = params.get("location")
-        period_label = {
-            "today": "heute",
-            "tomorrow": "morgen",
-            "week": "diese Woche",
-        }.get(period, period)
-        weather = await asyncio.to_thread(get_weather, period, time_of_day, location)
-        await update.message.reply_text(
-            f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
-        )
-        _conv_complete(chat_id, f"Wetter {period_label} angezeigt")
-
+        await handle_weather(chat_id, params, update)
     elif intent == "briefing":
-        await update.message.reply_text("⏳ Briefing wird erstellt...")
-        msg = await build_briefing()
-        await update.message.reply_text(msg, parse_mode="Markdown")
-        _conv_complete(chat_id, "Morgenbriefing angezeigt")
-
+        await handle_briefing(chat_id, update)
     elif intent == "memory":
-        mode = params.get("mode", "list")
-        query = params.get("query")
-        if not _memory_agent:
-            await update.message.reply_text("Memory-System nicht initialisiert.")
-            return
-        if mode == "delete":
-            msg = await _memory_agent.delete_memory(query)
-        else:
-            msg = await _memory_agent.list_memories()
-        await update.message.reply_text(msg, parse_mode="Markdown")
-        _conv_complete(chat_id, f"Erinnerungen {mode}")
-
+        await handle_memory(chat_id, params, update)
+        return
     else:
-        personal_system = (
-            "Du bist Jarvis, persönlicher KI-Assistent für Philipp. Antworte hilfreich auf Deutsch.\n\n"
-            "Deine tatsächlichen Fähigkeiten:\n"
-            "- Kalender: Outlook-Kalender lesen und Termine erstellen (mit Bestätigung)\n"
-            "- Mail: MS365-Posteingang lesen, durchsuchen, Mails schreiben\n"
-            "- Tasks: MS To Do Listen lesen und verwalten\n"
-            "- Wetter: aktuelle Wetterdaten und Vorhersage für Tutzing/München\n"
-            "- KI-News: aktuelle Nachrichten aus der AI-Welt\n"
-            "- Web-Recherche: aktuelle Informationen aus dem Internet\n"
-            "- Coding: Claude Code auf VPS-Projekten ausführen (recipe-app, immo-radar etc.)\n"
-            "- Morning Briefing: tägliche Zusammenfassung\n"
-            "- Erinnerungen: persönliche Fakten und Präferenzen speichern/abrufen\n\n"
-            "Wenn eine Frage zu einem dieser Bereiche gehört aber hierher geroutet wurde, sag das ehrlich "
-            "('Das war ein Routing-Fehler — frag nochmal klarer') statt zu halluzinieren. "
-            "Bei echten allgemeinen Fragen (Smalltalk, Wissensfragen ohne Tool-Bezug) antworte normal."
-        )
-        stop = asyncio.Event()
-        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
-        try:
-            answer = await ask_claude(
-                chat_id=chat_id,
-                system=memory_context + personal_system,
-                user=text,
-                model="claude-sonnet-4-6",
-                history=history,
-            )
-        finally:
-            stop.set()
-            await typing_task
-        if _memory_agent:
-            asyncio.create_task(_memory_agent.extract(text, answer, source="personal"))
+        answer = await handle_personal(chat_id, text, memory_context, history)
 
     if answer and not answer.startswith("Fehler:"):
         _conv_complete(chat_id, answer[:180])
