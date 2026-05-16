@@ -667,6 +667,11 @@ async def handle_calendar_modify(chat_id, mode, params):
     )
 
 
+def _md_safe(s) -> str:
+    """Strip Markdown-V1 control chars from user text before interpolation."""
+    return (s or "").replace("*", "").replace("_", "").replace("`", "")
+
+
 async def _show_calendar_action_confirm(chat_id, event, mode, params):
     """Stage an update/delete op in _pending_calendar_ops and send the confirm dialog."""
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -675,6 +680,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
     recurring_note = (
         "\n_(nur dieser Termin — die Serie bleibt)_" if event.recurring else ""
     )
+    title_safe = _md_safe(event.title)
 
     if mode == "delete":
         _pending_calendar_ops[chat_id] = {
@@ -683,7 +689,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
             "title": event.title,
         }
         text = (
-            f"🗑️ *Termin absagen?*\n\n*{event.title}*\n"
+            f"🗑️ *Termin absagen?*\n\n*{title_safe}*\n"
             f"{event.start.strftime('%d.%m.%Y %H:%M')} – "
             f"{event.end.strftime('%H:%M')}{recurring_note}"
         )
@@ -707,7 +713,7 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
             "new_title": new_title,
             "new_location": new_location,
         }
-        lines = [f"📅 *Termin ändern?*\n\n*{event.title}*"]
+        lines = [f"📅 *Termin ändern?*\n\n*{title_safe}*"]
         if new_start:
             lines.append(
                 f"Zeit: {event.start.strftime('%d.%m. %H:%M')}–"
@@ -715,9 +721,11 @@ async def _show_calendar_action_confirm(chat_id, event, mode, params):
                 f"{new_start.strftime('%d.%m. %H:%M')}–{new_end.strftime('%H:%M')}"
             )
         if new_title:
-            lines.append(f"Titel: {event.title} → {new_title}")
+            lines.append(f"Titel: {title_safe} → {_md_safe(new_title)}")
         if new_location:
-            lines.append(f"Ort: {event.location or '—'} → {new_location}")
+            lines.append(
+                f"Ort: {_md_safe(event.location) or '—'} → {_md_safe(new_location)}"
+            )
         text = "\n".join(lines) + recurring_note
         confirm_label = "✅ Ändern"
 
@@ -1410,7 +1418,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     op["end"],
                 )
                 msg = (
-                    f"✅ Termin erstellt: *{op['title']}*\n"
+                    f"✅ Termin erstellt: *{_md_safe(op['title'])}*\n"
                     f"{op['start'].strftime('%d.%m.%Y %H:%M')} – "
                     f"{op['end'].strftime('%H:%M')}"
                 )
@@ -1423,10 +1431,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     op["new_title"],
                     op["new_location"],
                 )
-                msg = f"✅ Termin geändert: *{op['title']}*"
+                msg = f"✅ Termin geändert: *{_md_safe(op['title'])}*"
             elif op["type"] == "delete":
                 await asyncio.to_thread(calendar_agent.delete_event, op["event_id"])
-                msg = f"✅ Termin abgesagt: *{op['title']}*"
+                msg = f"✅ Termin abgesagt: *{_md_safe(op['title'])}*"
             else:
                 msg = "❌ Unbekannte Aktion."
             await query.edit_message_text(msg, parse_mode="Markdown")
