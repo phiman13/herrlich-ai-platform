@@ -9,7 +9,13 @@ logger = logging.getLogger("jarvis.microsoft")
 _JARVIS_DIR = os.environ.get("JARVIS_DATA_DIR", "/root/.jarvis")
 TOKEN_DIR = _JARVIS_DIR
 TOKEN_FILE = os.path.join(_JARVIS_DIR, "microsoft_tokens.json")
-SCOPES = ["Mail.ReadWrite", "Mail.Send", "Tasks.ReadWrite", "Tasks.ReadWrite.Shared"]
+SCOPES = [
+    "Mail.ReadWrite",
+    "Mail.Send",
+    "Tasks.ReadWrite",
+    "Tasks.ReadWrite.Shared",
+    "Calendars.ReadWrite",
+]
 AUTHORITY = "https://login.microsoftonline.com/consumers"
 REDIRECT_URI = "https://herrlich.dev/oauth/microsoft/callback"
 
