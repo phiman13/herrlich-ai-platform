@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import agents.main as main
+import callbacks
 import calendar_handler
 import app_state
 
@@ -59,7 +59,7 @@ def test_mail_send_expired_op_is_rejected():
     }
     update = _make_cbq("mail:send")
     with patch("mail_agent.MailAgent") as MockAgent:
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.assert_not_called()
     assert "Abgelaufen" in _edited(update)
 
@@ -74,7 +74,7 @@ def test_mail_action_confirm_expired_op_is_rejected():
     }
     update = _make_cbq("mail:action:confirm")
     with patch("mail_agent.MailAgent") as MockAgent:
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.assert_not_called()
     assert "Abgelaufen" in _edited(update)
 
@@ -88,8 +88,8 @@ def test_cal_action_confirm_expired_op_is_rejected():
         "staged_at": time.time() - 700,
     }
     update = _make_cbq("cal:action:confirm")
-    with patch("agents.main.calendar_agent") as mock_cal:
-        asyncio.run(main.handle_callback(update, None))
+    with patch("callbacks.calendar_agent") as mock_cal:
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_cal.create_event.assert_not_called()
     assert "Abgelaufen" in _edited(update)
 
@@ -108,7 +108,7 @@ def test_mail_send_fresh_op_is_sent():
     update = _make_cbq("mail:send")
     with patch("mail_agent.MailAgent") as MockAgent:
         MockAgent.return_value.send_mail.return_value = True
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.return_value.send_mail.assert_called_once()
     assert "gesendet" in _edited(update)
 
@@ -124,7 +124,7 @@ def test_mail_action_confirm_fresh_op_executes():
     update = _make_cbq("mail:action:confirm")
     with patch("mail_agent.MailAgent") as MockAgent:
         MockAgent.return_value.archive.return_value = True
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.return_value.archive.assert_called_once_with("m1")
     assert "archiviert" in _edited(update)
 
@@ -137,8 +137,8 @@ def test_cal_action_confirm_fresh_op_executes():
         "staged_at": time.time(),
     }
     update = _make_cbq("cal:action:confirm")
-    with patch("agents.main.calendar_agent") as mock_cal:
-        asyncio.run(main.handle_callback(update, None))
+    with patch("callbacks.calendar_agent") as mock_cal:
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_cal.delete_event.assert_called_once_with("e1")
     assert "abgesagt" in _edited(update)
 
@@ -149,20 +149,20 @@ def test_cal_action_confirm_fresh_op_executes():
 def test_mail_cancel_discards_draft():
     app_state.pending_mail_ops[123] = {"type": "compose", "staged_at": time.time()}
     update = _make_cbq("mail:cancel")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert 123 not in app_state.pending_mail_ops
     assert "verworfen" in _edited(update)
 
 
 def test_mail_send_no_draft_warns():
     update = _make_cbq("mail:send")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert "Kein Entwurf" in _edited(update)
 
 
 def test_mail_action_confirm_no_op_warns():
     update = _make_cbq("mail:action:confirm")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert "Keine ausstehende Aktion" in _edited(update)
 
 
@@ -192,7 +192,7 @@ def test_mail_action_confirm_executes(op_type, method, extra, expected_args, exp
     update = _make_cbq("mail:action:confirm")
     with patch("mail_agent.MailAgent") as MockAgent:
         getattr(MockAgent.return_value, method).return_value = True
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     getattr(MockAgent.return_value, method).assert_called_once_with(*expected_args)
     assert expect in _edited(update)
 
@@ -212,7 +212,7 @@ def test_mail_action_confirm_move():
         folder.id = "f1"
         MockAgent.return_value.find_folder_by_name.return_value = folder
         MockAgent.return_value.move.return_value = True
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.return_value.move.assert_called_once_with("m1", "f1")
     assert "verschoben" in _edited(update)
 
@@ -221,7 +221,7 @@ def test_mail_action_cancel_clears_state():
     app_state.pending_mail_ops[123] = {"type": "archive", "staged_at": time.time()}
     app_state.last_mail_search[123] = {"mails": [], "timestamp": time.time()}
     update = _make_cbq("mail:action:cancel")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert 123 not in app_state.pending_mail_ops
     assert 123 not in app_state.last_mail_search
     assert "Abgebrochen" in _edited(update)
@@ -235,7 +235,7 @@ def test_mail_select_expired_search_warns():
         "timestamp": time.time() - 300,
     }
     update = _make_cbq("mail:select:0")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert "abgelaufen" in _edited(update).lower()
 
 
@@ -253,9 +253,9 @@ def test_mail_select_picks_mail_and_shows_confirm():
     }
     update = _make_cbq("mail:select:0")
     with patch(
-        "agents.main._show_mail_action_confirm", new_callable=AsyncMock
+        "callbacks._show_mail_action_confirm", new_callable=AsyncMock
     ) as mock_show:
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_show.assert_awaited_once()
     assert mock_show.await_args[0][1] is mail
     assert 123 not in app_state.last_mail_search
@@ -282,7 +282,7 @@ def test_mail_action_roundtrip_archive():
     update = _make_cbq("mail:action:confirm")
     with patch("mail_agent.MailAgent") as MockAgent:
         MockAgent.return_value.archive.return_value = True
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     MockAgent.return_value.archive.assert_called_once_with("m99")
 
 
@@ -292,14 +292,14 @@ def test_mail_action_roundtrip_archive():
 def test_push_triggers_git_push():
     update = _make_cbq("push:immo-radar")
     with patch("vps.git_push", new_callable=AsyncMock, return_value=True) as mock_push:
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_push.assert_awaited_once_with("immo-radar")
     update.callback_query.message.reply_text.assert_awaited()
 
 
 def test_dismiss_removes_keyboard():
     update = _make_cbq("dismiss")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     update.callback_query.edit_message_reply_markup.assert_awaited_once()
 
 
@@ -312,8 +312,8 @@ def test_cal_action_confirm_create_executes():
         "staged_at": time.time(),
     }
     update = _make_cbq("cal:action:confirm")
-    with patch("agents.main.calendar_agent") as mock_cal:
-        asyncio.run(main.handle_callback(update, None))
+    with patch("callbacks.calendar_agent") as mock_cal:
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_cal.create_event.assert_called_once()
     assert "erstellt" in _edited(update)
 
@@ -330,15 +330,15 @@ def test_cal_action_confirm_update_executes():
         "staged_at": time.time(),
     }
     update = _make_cbq("cal:action:confirm")
-    with patch("agents.main.calendar_agent") as mock_cal:
-        asyncio.run(main.handle_callback(update, None))
+    with patch("callbacks.calendar_agent") as mock_cal:
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_cal.update_event.assert_called_once()
     assert "geändert" in _edited(update)
 
 
 def test_cal_action_confirm_no_op_warns():
     update = _make_cbq("cal:action:confirm")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert "Keine ausstehende Aktion" in _edited(update)
 
 
@@ -346,7 +346,7 @@ def test_cal_action_cancel_clears_state():
     app_state.pending_calendar_ops[123] = {"type": "create", "staged_at": time.time()}
     app_state.last_calendar_search[123] = {"events": [], "timestamp": time.time()}
     update = _make_cbq("cal:action:cancel")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert 123 not in app_state.pending_calendar_ops
     assert 123 not in app_state.last_calendar_search
     assert "Abgebrochen" in _edited(update)
@@ -360,7 +360,7 @@ def test_cal_select_expired_search_warns():
         "timestamp": time.time() - 300,  # > 180s TTL
     }
     update = _make_cbq("cal:select:0")
-    asyncio.run(main.handle_callback(update, None))
+    asyncio.run(callbacks.handle_callback(update, None))
     assert "abgelaufen" in _edited(update).lower()
 
 
@@ -374,9 +374,9 @@ def test_cal_select_picks_event_and_shows_confirm():
     }
     update = _make_cbq("cal:select:0")
     with patch(
-        "agents.main._show_calendar_action_confirm", new_callable=AsyncMock
+        "callbacks._show_calendar_action_confirm", new_callable=AsyncMock
     ) as mock_show:
-        asyncio.run(main.handle_callback(update, None))
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_show.assert_awaited_once()
     assert mock_show.await_args[0][1] is event
     assert 123 not in app_state.last_calendar_search
@@ -396,6 +396,6 @@ def test_calendar_create_roundtrip():
     assert "staged_at" in app_state.pending_calendar_ops[123]
 
     update = _make_cbq("cal:action:confirm")
-    with patch("agents.main.calendar_agent") as mock_cal:
-        asyncio.run(main.handle_callback(update, None))
+    with patch("callbacks.calendar_agent") as mock_cal:
+        asyncio.run(callbacks.handle_callback(update, None))
     mock_cal.create_event.assert_called_once()
