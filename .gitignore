@@ -34,3 +34,6 @@ Thumbs.db
 *.log
 logs/
 .worktrees/
+
+# Claude Code
+.claude/settings.local.json
