@@ -15,21 +15,20 @@ Letzter Stand: 18.05.2026
 ## P1 — Nächster großer Schritt
 
 - [ ] **Agentischer Jarvis — Phase 2 & 3**
-      Phase 1 ist umgesetzt (`personal`/`work`/`research` laufen hinter dem
-      Feature-Flag `JARVIS_AGENT_ENABLED` durch einen echten Agenten auf dem
-      Claude Agent SDK; Werkzeuge `workspace` + `web`; Router bleibt vorgelagert).
-      Code gemergt, Flag default `0` — Aktivierung nach VPS-Vorbereitung +
-      Golden-Set-Verifikation (siehe Phase-1-Plan).
+      Phase 1 ist **live** (seit 18.05.2026, `JARVIS_AGENT_ENABLED=1`):
+      `personal`/`work`/`research` laufen durch einen echten Agenten (Claude Agent
+      SDK, Werkzeuge `workspace` + `web`); der Router bleibt vorgelagert.
+      Ist-Zustand siehe `CLAUDE.md` → „Agentischer Pfad".
       **Offen:**
-      - Phase 2: die strukturierten Handler (`weather`/`news` → `tasks`/`briefing`
-        → `mail`/`calendar` → `coding`) einzeln zu Agenten-Tools umbauen, mit
-        Write-Confirm-Fluss. Eigener Plan.
-      - Phase 3: `router.py` entfällt, der Agent ist alleinige Fronttür.
-      Design: `docs/plans/2026-05-18-agentischer-jarvis-design.md` ·
-      Phase-1-Plan: `docs/plans/2026-05-18-agentischer-jarvis-phase1-plan.md`.
-      Follow-ups aus dem Phase-1-Review: (1) freundlichere Fehlermeldung wenn die
-      `claude`-CLI auf dem VPS fehlt/nicht authentifiziert ist; (2) optional
-      Agent-Lauf nach Write-Confirm fortsetzen (v2).
+      - Phase 2: die strukturierten Handler (Reihenfolge nach Risiko: `weather`/`news`
+        → `tasks`/`briefing` → `mail`/`calendar` → `coding`) einzeln zu Agenten-Tools
+        umbauen, inkl. Write-Confirm-Fluss. Eigener Plan nötig.
+      - Phase 3: `router.py` entfällt, der Agent ist alleinige Fronttür — beseitigt
+        den Router-Fehlklassifikations-Fehlmodus.
+      - Follow-up Phase-1-Review: freundlichere Fehlermeldung, falls die `claude`-CLI
+        auf dem VPS fehlt/nicht authentifiziert ist.
+      Design (SSoT, alle Phasen): `docs/plans/2026-05-18-agentischer-jarvis-design.md`.
+      Phase-1-Plan archiviert: `docs/plans/done/2026-05-18-agentischer-jarvis-phase1-plan.md`.
 
 ---
 

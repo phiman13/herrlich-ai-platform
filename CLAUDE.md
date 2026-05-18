@@ -30,9 +30,9 @@ agents/router.py            Claude Haiku — klassifiziert Intent
         ├── briefing        briefing_agent.py
         ├── coding          coding_agent.py + github_agent.py
         ├── memory          memory_agent.py
-        ├── personal        Claude Sonnet + MemoryAgent (retrieve + extract)
-        ├── work            Claude Sonnet + MemoryAgent
-        └── research        Claude Sonnet + MemoryAgent + Web-Search
+        ├── personal ┐
+        ├── work     ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
+        └── research ┘  Tools workspace/web, Denk-Schleife, History, MemoryAgent
 
 APScheduler (SQLite Jobstore, restart-safe):
         └── proactive_agent.py
@@ -101,7 +101,7 @@ docs/plans/             Aktive Pläne (done/ = Archiv abgeschlossener)
 | `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
 | `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
 | `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
-| `JARVIS_AGENT_ENABLED` | ❌ | Feature-Flag agentischer Pfad (Default: `0` = heutiger Pfad) |
+| `JARVIS_AGENT_ENABLED` | ❌ | Feature-Flag agentischer Pfad — prod: `1` (aktiv seit 18.05.2026); `0` = alter Pfad (Rollback) |
 | `JARVIS_AGENT_MODEL` | ❌ | Modell für den Agenten (Default: `claude-sonnet-4-6`) |
 | `JARVIS_WORKSPACE_DIR` | ❌ | Workspace-Root für den `workspace`-Tool (Default: `~/Code`) |
 | `JARVIS_CLAUDE_CLI_PATH` | ❌ | Expliziter Pfad zur `claude`-CLI, falls nicht auf PATH |
@@ -355,12 +355,14 @@ ssh root@100.115.184.3
 
 ---
 
-## Agentischer Pfad (Phase 1) — Feature-Flag
+## Agentischer Pfad — Phase 1 (live seit 18.05.2026)
 
-`personal`/`work`/`research` laufen — wenn `JARVIS_AGENT_ENABLED=1` — durch einen
-echten Agenten (`agents/agent.py`, Claude Agent SDK) statt durch die Single-shot-
-`chat_handler`-Funktionen. Der Router bleibt vorgelagert; strukturierte Intents
-(`mail`, `calendar`, …) sind unverändert. Flag aus = Verhalten exakt wie bisher.
+`personal`/`work`/`research` laufen durch einen echten Agenten
+(`agents/agent.py`, Claude Agent SDK) statt durch die alten Single-shot-
+`chat_handler`-Funktionen. Aktiv über `JARVIS_AGENT_ENABLED=1`. Der Router bleibt
+in Phase 1 vorgelagert — strukturierte Intents (`mail`, `calendar`, …) laufen
+unverändert über ihre Handler. Verklassifiziert der Router eine Frage (z.B. als
+`news`), erreicht sie den Agenten nicht — bekannte Limitierung, behoben in Phase 3.
 
 - `agents/agent.py` — `run_agent()`: ein zustandsloser SDK-Lauf pro Nachricht,
   History als Text eingebettet, Antwort an Telegram. Pro Chat serialisiert.
@@ -369,21 +371,20 @@ echten Agenten (`agents/agent.py`, Claude Agent SDK) statt durch die Single-shot
 - Werkzeuge: `workspace` + die eingebauten `WebSearch`/`WebFetch`. Built-in
   `Bash`/`Edit`/`Read` sind für den Agenten deaktiviert.
 
-### Auth & Runtime
+### Auth, Billing & Runtime (VPS)
 
-Das Agent SDK startet die `claude`-CLI als Subprozess — sie nutzt OAuth/Abo-Auth
-(kein `ANTHROPIC_API_KEY` nötig). Voraussetzungen auf dem VPS:
+Das Agent SDK startet die `claude`-CLI als Subprozess. Aktueller Stand:
 
-1. Node.js + Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
-2. Headless-Auth für den `jarvis`-User: `claude setup-token` ausführen, den Token
-   als `CLAUDE_CODE_OAUTH_TOKEN` in `/var/lib/jarvis/.env` eintragen.
-3. `JARVIS_WORKSPACE_DIR=/home/claude/workspace` setzen — dort liegen alle
-   Projekt-Klone (Workspace-Sync). `jarvis` braucht dafür Traverse-Recht auf den
-   Elternordner: `setfacl -m u:jarvis:--x /home/claude` (einmalig; `workspace`
-   selbst ist bereits world-lesbar).
-4. Falls `claude` nicht auf dem Service-PATH liegt: `JARVIS_CLAUDE_CLI_PATH` setzen.
-5. `JARVIS_AGENT_ENABLED` bleibt zunächst `0` — erst nach manueller Verifikation
-   per Telegram auf `1` stellen und `jarvis` neu starten.
+- **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — die CLI
+  ignoriert den API-Key und nutzt `CLAUDE_CODE_OAUTH_TOKEN` (in `/var/lib/jarvis/.env`).
+  Der jarvis-Prozess behält `ANTHROPIC_API_KEY` für die alten Agenten (Router/Memory).
+- **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; `jarvis` hat via
+  `setfacl -m u:jarvis:--x /home/claude` Traverse-Recht (einmalig gesetzt).
+- **CLI:** Claude Code CLI unter `/usr/bin/claude`, `claude-agent-sdk` im venv
+  `/opt/jarvis/venv/`.
+
+**Rollback:** `JARVIS_AGENT_ENABLED=0` in `/var/lib/jarvis/.env` + `systemctl restart
+jarvis` → sofort zurück zum alten Pfad, kein Code-Revert nötig.
 
 Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
