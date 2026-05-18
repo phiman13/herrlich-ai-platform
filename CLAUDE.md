@@ -101,6 +101,11 @@ docs/plans/             Aktive Pläne (done/ = Archiv abgeschlossener)
 | `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
 | `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
 | `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
+| `JARVIS_AGENT_ENABLED` | ❌ | Feature-Flag agentischer Pfad (Default: `0` = heutiger Pfad) |
+| `JARVIS_AGENT_MODEL` | ❌ | Modell für den Agenten (Default: `claude-sonnet-4-6`) |
+| `JARVIS_WORKSPACE_DIR` | ❌ | Workspace-Root für den `workspace`-Tool (Default: `~/Code`) |
+| `JARVIS_CLAUDE_CLI_PATH` | ❌ | Expliziter Pfad zur `claude`-CLI, falls nicht auf PATH |
+| `CLAUDE_CODE_OAUTH_TOKEN` | ❌ | OAuth-Token der Claude Code CLI (headless, Abo-Auth) |
 | `JARVIS_DATA_DIR` | ❌ | Pfad für DBs + Tokens (Default: `/root/.jarvis`, prod: `/var/lib/jarvis/.jarvis`) |
 | `REMINDER_TODO_LIST` | ❌ | To-Do-Liste für Erinnerungen (Default: `Tasks`) |
 | `WEATHER_LAT` | ❌ | Breitengrad Heimatort (Default: `48.14`) |
@@ -347,6 +352,38 @@ ssh root@100.115.184.3 "systemctl status jarvis"
 # VPS direkt öffnen
 ssh root@100.115.184.3
 ```
+
+---
+
+## Agentischer Pfad (Phase 1) — Feature-Flag
+
+`personal`/`work`/`research` laufen — wenn `JARVIS_AGENT_ENABLED=1` — durch einen
+echten Agenten (`agents/agent.py`, Claude Agent SDK) statt durch die Single-shot-
+`chat_handler`-Funktionen. Der Router bleibt vorgelagert; strukturierte Intents
+(`mail`, `calendar`, …) sind unverändert. Flag aus = Verhalten exakt wie bisher.
+
+- `agents/agent.py` — `run_agent()`: ein zustandsloser SDK-Lauf pro Nachricht,
+  History als Text eingebettet, Antwort an Telegram. Pro Chat serialisiert.
+- `agents/agent_tools.py` — `workspace`-Tool (Datei lesen/suchen/listen, sandboxed
+  auf `JARVIS_WORKSPACE_DIR`), MCP-Server, `can_use_tool`-Permission-Hook.
+- Werkzeuge: `workspace` + die eingebauten `WebSearch`/`WebFetch`. Built-in
+  `Bash`/`Edit`/`Read` sind für den Agenten deaktiviert.
+
+### Auth & Runtime
+
+Das Agent SDK startet die `claude`-CLI als Subprozess — sie nutzt OAuth/Abo-Auth
+(kein `ANTHROPIC_API_KEY` nötig). Voraussetzungen auf dem VPS:
+
+1. Node.js + Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
+2. Headless-Auth für den `jarvis`-User: `claude setup-token` ausführen, den Token
+   als `CLAUDE_CODE_OAUTH_TOKEN` in `/var/lib/jarvis/.env` eintragen.
+3. `JARVIS_WORKSPACE_DIR` auf ein vom `jarvis`-User lesbares Verzeichnis mit den
+   Projekt-Klonen setzen (z. B. `/opt`).
+4. Falls `claude` nicht auf dem Service-PATH liegt: `JARVIS_CLAUDE_CLI_PATH` setzen.
+5. `JARVIS_AGENT_ENABLED` bleibt zunächst `0` — erst nach manueller Verifikation
+   per Telegram auf `1` stellen und `jarvis` neu starten.
+
+Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
 ---
 
