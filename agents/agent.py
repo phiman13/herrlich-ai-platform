@@ -5,8 +5,22 @@ diese Runtime übernimmt personal/work/research, wenn JARVIS_AGENT_ENABLED geset
 ist.
 """
 
+import asyncio
 import logging
 import os
+
+from telegram import Bot
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    TextBlock,
+    query,
+)
+
+import app_state
+from agent_tools import build_mcp_server, permission_hook
+from app_state import _keep_typing
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -77,3 +91,72 @@ def build_user_prompt(history: list[dict], user_text: str) -> str:
             + user_text
         )
     return user_text
+
+
+async def run_agent(
+    chat_id: int,
+    user_text: str,
+    history: list[dict],
+    memory_context: str,
+) -> str:
+    """Einen agentischen Turn fahren: Optionen bauen, SDK-Loop, Antwort senden.
+
+    Pro Chat serialisiert (asyncio.Lock). Gibt den finalen Antworttext zurück.
+    """
+    async with app_state.get_agent_lock(chat_id):
+        bot = Bot(token=app_state.TELEGRAM_TOKEN)
+        stop = asyncio.Event()
+        typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
+        final_text = ""
+        try:
+            opts_kwargs = dict(
+                model=os.environ.get("JARVIS_AGENT_MODEL", _DEFAULT_MODEL),
+                system_prompt=build_system_prompt(memory_context),
+                mcp_servers={"jarvis": build_mcp_server()},
+                allowed_tools=["WebSearch", "WebFetch"],
+                tools=["WebSearch", "WebFetch"],
+                can_use_tool=permission_hook,
+                max_turns=_MAX_TURNS,
+                permission_mode="default",
+            )
+            cli_path = os.environ.get("JARVIS_CLAUDE_CLI_PATH")
+            if cli_path:
+                opts_kwargs["cli_path"] = cli_path
+            options = ClaudeAgentOptions(**opts_kwargs)
+
+            prompt_text = build_user_prompt(history, user_text)
+
+            async def _prompt_stream():
+                yield {
+                    "type": "user",
+                    "message": {"role": "user", "content": prompt_text},
+                }
+
+            async for msg in query(prompt=_prompt_stream(), options=options):
+                if isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        if isinstance(block, TextBlock) and block.text.strip():
+                            final_text = block.text
+                elif isinstance(msg, ResultMessage):
+                    if msg.result:
+                        final_text = msg.result
+                    elif msg.is_error and not final_text:
+                        final_text = "Der Agent konnte die Anfrage nicht abschließen."
+        except Exception as e:
+            logger.exception("Agent-Lauf fehlgeschlagen")
+            final_text = f"Fehler: {e}"
+        finally:
+            stop.set()
+            await typing_task
+
+        if not final_text:
+            final_text = "Keine Antwort erhalten."
+        if len(final_text) > 4000:
+            final_text = final_text[:4000] + "\n[...]"
+        await bot.send_message(chat_id=chat_id, text=final_text)
+
+    if app_state.memory_agent and not final_text.startswith("Fehler:"):
+        asyncio.create_task(
+            app_state.memory_agent.extract(user_text, final_text, source="agent")
+        )
+    return final_text

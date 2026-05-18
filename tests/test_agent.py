@@ -1,6 +1,10 @@
 """Tests für agents/agent.py."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
 import agent
 import app_state
@@ -76,3 +80,86 @@ def test_get_agent_lock_returns_same_lock_per_chat():
     assert lock_a1 is lock_a2
     assert lock_a1 is not lock_b
     assert isinstance(lock_a1, asyncio.Lock)
+
+
+def _fake_assistant(text):
+    msg = MagicMock(spec=AssistantMessage)
+    block = MagicMock(spec=TextBlock)
+    block.text = text
+    msg.content = [block]
+    return msg
+
+
+def _fake_result(result_text, is_error=False):
+    msg = MagicMock(spec=ResultMessage)
+    msg.result = result_text
+    msg.is_error = is_error
+    return msg
+
+
+@pytest.mark.asyncio
+async def test_run_agent_returns_result_text():
+    async def fake_query(*, prompt, options=None, transport=None):
+        yield _fake_assistant("Zwischentext")
+        yield _fake_result("Die finale Antwort.")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    with (
+        patch("agent.query", fake_query),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        answer = await agent.run_agent(555, "Hallo", [], "")
+
+    assert answer == "Die finale Antwort."
+    mock_bot.send_message.assert_awaited_once()
+    assert mock_bot.send_message.call_args.kwargs["text"] == "Die finale Antwort."
+
+
+@pytest.mark.asyncio
+async def test_run_agent_handles_query_exception():
+    async def boom(*, prompt, options=None, transport=None):
+        raise RuntimeError("CLI weg")
+        yield  # pragma: no cover
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    with (
+        patch("agent.query", boom),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        answer = await agent.run_agent(555, "Hallo", [], "")
+
+    assert answer.startswith("Fehler:")
+    mock_bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_agent_serializes_per_chat():
+    order = []
+
+    async def slow_query(*, prompt, options=None, transport=None):
+        order.append("start")
+        await asyncio.sleep(0.05)
+        order.append("end")
+        yield _fake_result("ok")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    with (
+        patch("agent.query", slow_query),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        await asyncio.gather(
+            agent.run_agent(777, "A", [], ""),
+            agent.run_agent(777, "B", [], ""),
+        )
+
+    # Serialisiert: erst beide Schritte von Lauf 1, dann Lauf 2 — kein Interleaving.
+    assert order == ["start", "end", "start", "end"]
