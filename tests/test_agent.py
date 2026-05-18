@@ -184,3 +184,25 @@ async def test_run_agent_uses_assistant_text_without_result():
         answer = await agent.run_agent(556, "Hallo", [], "")
 
     assert answer == "Nur Assistant-Text"
+
+
+@pytest.mark.asyncio
+async def test_run_agent_forces_subscription_billing():
+    """run_agent klemmt ANTHROPIC_API_KEY für den CLI-Subprozess ab → Abo-Billing."""
+    captured = {}
+
+    async def fake_query(*, prompt, options=None, transport=None):
+        captured["options"] = options
+        yield _fake_result("ok")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    with (
+        patch("agent.query", fake_query),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        await agent.run_agent(558, "Hallo", [], "")
+
+    assert captured["options"].env.get("ANTHROPIC_API_KEY") == ""

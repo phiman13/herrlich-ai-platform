@@ -120,6 +120,10 @@ async def run_agent(
                 can_use_tool=permission_hook,
                 max_turns=_MAX_TURNS,
                 permission_mode="default",
+                # ANTHROPIC_API_KEY für den CLI-Subprozess leeren — erzwingt
+                # Abo-Auth (CLAUDE_CODE_OAUTH_TOKEN) statt API-Key-Billing.
+                # Der jarvis-Prozess behält den Key für die alten Agenten.
+                env={"ANTHROPIC_API_KEY": ""},
             )
             cli_path = os.environ.get("JARVIS_CLAUDE_CLI_PATH")
             if cli_path:
