@@ -133,3 +133,9 @@ def test_do_list_hides_dotfiles_and_skipdirs(tmp_path, monkeypatch):
 def test_do_list_non_directory_is_error(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
     assert agent_tools._do_list("nichtda").startswith("FEHLER:")
+
+
+def test_do_list_empty_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "empty").mkdir()
+    assert agent_tools._do_list("empty") == "(leer)"
