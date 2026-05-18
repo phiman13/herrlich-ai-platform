@@ -11,12 +11,19 @@ CLAUDE_USER = "claude"
 
 
 async def run_as_claude(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
-    """Run a command as claude-user via sudo. Returns (returncode, stdout, stderr)."""
-    full_cmd = ["sudo", "-u", CLAUDE_USER, "--"] + cmd
+    """Run a command as claude-user via sudo. Returns (returncode, stdout, stderr).
+
+    cwd wird per `sudo --chdir` gesetzt, nicht über den Subprozess: Python würde
+    sonst noch als jarvis ins Verzeichnis wechseln — jarvis darf /home/claude
+    (drwxr-x---) aber nicht betreten. `sudo --chdir` wechselt erst als claude.
+    """
+    full_cmd = ["sudo"]
+    if cwd:
+        full_cmd += ["--chdir", cwd]
+    full_cmd += ["-u", CLAUDE_USER, "--"] + cmd
     try:
         proc = await asyncio.create_subprocess_exec(
             *full_cmd,
-            cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -77,7 +84,7 @@ async def git_log(project: str, n: int = 10) -> str:
     cwd = _safe_cwd(project)
     if not cwd:
         return "Ungültiger Projektname."
-    rc, stdout, _ = await run_as_claude(["git", "log", "--oneline", f"-{n}"], cwd=cwd)
+    rc, stdout, _ = await run_as_claude(["git", "-C", cwd, "log", "--oneline", f"-{n}"])
     return stdout if rc == 0 else "git log failed"
 
 
@@ -86,7 +93,7 @@ async def git_pull(project: str) -> bool:
     cwd = _safe_cwd(project)
     if not cwd:
         return False
-    rc, _, _ = await run_as_claude(["git", "pull", "--quiet"], cwd=cwd)
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "pull", "--quiet"])
     return rc == 0
 
 
@@ -125,10 +132,10 @@ async def write_file_and_commit(
         logger.error(f"cp to workspace failed: {err}")
         return False
 
-    rc, _, _ = await run_as_claude(["git", "add", filename], cwd=cwd)
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "add", filename])
     if rc != 0:
         return False
-    rc, _, _ = await run_as_claude(["git", "commit", "-m", commit_msg], cwd=cwd)
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "commit", "-m", commit_msg])
     return rc == 0
 
 
@@ -137,5 +144,5 @@ async def git_push(project: str) -> bool:
     cwd = _safe_cwd(project)
     if not cwd:
         return False
-    rc, _, _ = await run_as_claude(["git", "push"], cwd=cwd)
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "push"])
     return rc == 0
