@@ -9,6 +9,8 @@ import os
 import re
 from pathlib import Path
 
+from claude_agent_sdk import create_sdk_mcp_server, tool
+
 _MAX_FILE_CHARS = 60_000
 _SEARCH_MAX_HITS = 60
 _SKIP_DIRS = {
@@ -102,3 +104,31 @@ def _do_list(rel_path: str = "") -> str:
             continue
         entries.append(f"{child.name}/" if child.is_dir() else child.name)
     return "\n".join(entries) if entries else "(leer)"
+
+
+@tool(
+    "workspace",
+    "Liest und durchsucht Dateien in Philipps Coding-Workspace. "
+    "action='read': Datei lesen (path = relativer Pfad). "
+    "action='search': Regex-Suche (query = Muster, path = optionaler Unterordner). "
+    "action='list': Verzeichnis auflisten (path = relativer Pfad, leer = Workspace-Wurzel).",
+    {"action": str, "path": str, "query": str},
+)
+async def workspace_tool(args: dict) -> dict:
+    action = (args.get("action") or "").strip()
+    path = (args.get("path") or "").strip()
+    query = (args.get("query") or "").strip()
+    if action == "read":
+        result = _do_read(path)
+    elif action == "search":
+        result = _do_search(query, path)
+    elif action == "list":
+        result = _do_list(path)
+    else:
+        result = f"FEHLER: Unbekannte action '{action}'. Erlaubt: read, search, list."
+    return {"content": [{"type": "text", "text": result}]}
+
+
+def build_mcp_server():
+    """In-Process-MCP-Server mit dem workspace-Tool."""
+    return create_sdk_mcp_server(name="jarvis", version="1.0.0", tools=[workspace_tool])

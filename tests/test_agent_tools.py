@@ -1,5 +1,7 @@
 """Tests für agents/agent_tools.py."""
 
+import pytest
+
 import agent_tools
 
 
@@ -139,3 +141,27 @@ def test_do_list_empty_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
     (tmp_path / "empty").mkdir()
     assert agent_tools._do_list("empty") == "(leer)"
+
+
+@pytest.mark.asyncio
+async def test_workspace_tool_read(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "f.txt").write_text("Inhalt", encoding="utf-8")
+    result = await agent_tools.workspace_tool.handler(
+        {"action": "read", "path": "f.txt", "query": ""}
+    )
+    assert result["content"][0]["text"] == "Inhalt"
+
+
+@pytest.mark.asyncio
+async def test_workspace_tool_unknown_action(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    result = await agent_tools.workspace_tool.handler(
+        {"action": "delete", "path": "f.txt", "query": ""}
+    )
+    assert result["content"][0]["text"].startswith("FEHLER:")
+
+
+def test_build_mcp_server_registers_workspace():
+    server = agent_tools.build_mcp_server()
+    assert server is not None
