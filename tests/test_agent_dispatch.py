@@ -71,3 +71,43 @@ async def test_weather_never_routed_to_agent():
         await dispatch._process_text("Wetter morgen?", 123, update)
     mock_weather.assert_awaited_once()
     mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_work_routed_to_legacy_handler_when_flag_off():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("work"))),
+        patch("dispatch.agent_enabled", return_value=False),
+        patch("dispatch.run_agent", new=AsyncMock()) as mock_run,
+        patch(
+            "dispatch.handle_work", new=AsyncMock(return_value="Klassik")
+        ) as mock_work,
+    ):
+        await dispatch._process_text("Arbeit", 123, update)
+    mock_work.assert_awaited_once()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_research_routed_to_legacy_handler_when_flag_off():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch(
+            "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("research"))
+        ),
+        patch("dispatch.agent_enabled", return_value=False),
+        patch("dispatch.run_agent", new=AsyncMock()) as mock_run,
+        patch(
+            "dispatch.handle_research", new=AsyncMock(return_value="Klassik")
+        ) as mock_research,
+    ):
+        await dispatch._process_text("Recherche", 123, update)
+    mock_research.assert_awaited_once()
+    mock_run.assert_not_awaited()

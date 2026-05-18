@@ -32,6 +32,9 @@ logger = logging.getLogger("jarvis.dispatch")
 
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _HISTORY_INTENTS = {"personal", "work", "research"}
+# Intents, die der agentische Pfad übernimmt (wenn JARVIS_AGENT_ENABLED).
+# Bewusst eine eigene Menge — deckt sich aktuell mit _MEMORY_INTENTS /
+# _HISTORY_INTENTS, kann in Phase 2 aber divergieren.
 _AGENT_INTENTS = {"personal", "work", "research"}
 
 
