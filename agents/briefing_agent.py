@@ -6,14 +6,14 @@ try:
     from weather_agent import get_weather
     from news_agent import get_ai_news
     from github_agent import get_github_summary
-    from tasks_agent import get_tasks
+    from tasks_agent import get_briefing_tasks
     from calendar_agent import CalendarAgent, BERLIN
     from mail_agent import MailAgent
 except ImportError:
     from agents.weather_agent import get_weather
     from agents.news_agent import get_ai_news
     from agents.github_agent import get_github_summary
-    from agents.tasks_agent import get_tasks
+    from agents.tasks_agent import get_briefing_tasks
     from agents.calendar_agent import CalendarAgent, BERLIN
     from agents.mail_agent import MailAgent
 
@@ -78,10 +78,8 @@ def _get_mail_unread() -> str:
 
 def _get_open_tasks() -> str:
     try:
-        result = get_tasks(_BRIEFING_TASK_LIST)
-        # Strip the header line, return only bullet items
-        lines = [line for line in result.splitlines() if line.startswith("•")]
-        return "\n".join(lines) if lines else ""
+        titles = get_briefing_tasks(_BRIEFING_TASK_LIST)
+        return "\n".join(f"• {_escape_md(t)}" for t in titles)
     except Exception as e:
         logger.warning(f"Tasks-Fehler: {e}")
         return ""

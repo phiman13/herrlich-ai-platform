@@ -1,6 +1,8 @@
 # agents/tasks_agent.py
 import difflib
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -12,6 +14,7 @@ except ImportError:
 logger = logging.getLogger("jarvis.tasks")
 
 _BASE = "https://graph.microsoft.com/v1.0/me/todo"
+_BERLIN = ZoneInfo("Europe/Berlin")
 
 
 def _headers() -> dict:
@@ -78,6 +81,52 @@ def get_tasks(list_name: str | None = None) -> str:
     except Exception as e:
         logger.warning(f"Tasks nicht verfügbar: {e}")
         return "Tasks nicht verfügbar."
+
+
+def _due_date_part(dt_field: dict | None) -> str | None:
+    """Extract the YYYY-MM-DD portion from a Graph dateTimeTimeZone object."""
+    if not dt_field:
+        return None
+    raw = dt_field.get("dateTime")
+    return raw[:10] if raw else None
+
+
+def get_briefing_tasks(list_name: str) -> list[str]:
+    """Return titles of open tasks that are due today, overdue, or have a
+    reminder scheduled for today — used by the morning briefing."""
+    try:
+        list_id = _find_list_id(list_name)
+        if not list_id:
+            return []
+        resp = httpx.get(
+            f"{_BASE}/lists/{list_id}/tasks",
+            headers=_headers(),
+            params={
+                "$filter": "status ne 'completed'",
+                "$top": 100,
+                "$select": "title,dueDateTime,reminderDateTime,isReminderOn",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        today = datetime.now(_BERLIN).strftime("%Y-%m-%d")
+        titles = []
+        for t in resp.json().get("value", []):
+            title = t.get("title", "")
+            if _is_system_task(title):
+                continue
+            due = _due_date_part(t.get("dueDateTime"))
+            reminder = (
+                _due_date_part(t.get("reminderDateTime"))
+                if t.get("isReminderOn")
+                else None
+            )
+            if (due and due <= today) or reminder == today:
+                titles.append(title)
+        return titles
+    except Exception as e:
+        logger.warning("get_briefing_tasks fehlgeschlagen: %s", e)
+        return []
 
 
 def add_task(
