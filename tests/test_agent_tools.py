@@ -188,6 +188,6 @@ async def test_permission_hook_allows_workspace():
 
 @pytest.mark.asyncio
 async def test_permission_hook_denies_unknown_tool():
-    result = await agent_tools.permission_hook("Bash", {"command": "rm -rf /"}, None)
+    result = await agent_tools.permission_hook("Bash", {}, None)
     assert isinstance(result, PermissionResultDeny)
     assert result.interrupt is False

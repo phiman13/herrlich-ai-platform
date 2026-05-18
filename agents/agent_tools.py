@@ -30,6 +30,8 @@ _SKIP_DIRS = {
     ".next",
     ".worktrees",
 }
+# Voller MCP-Tool-Name: mcp__<server-name>__<tool-name>
+_WORKSPACE_TOOL_NAME = "mcp__jarvis__workspace"
 
 
 def _workspace_root() -> Path:
@@ -143,9 +145,6 @@ async def workspace_tool(args: dict) -> dict:
 def build_mcp_server() -> McpSdkServerConfig:
     """In-Process-MCP-Server mit dem workspace-Tool."""
     return create_sdk_mcp_server(name="jarvis", version="1.0.0", tools=[workspace_tool])
-
-
-_WORKSPACE_TOOL_NAME = "mcp__jarvis__workspace"
 
 
 async def permission_hook(tool_name: str, tool_input: dict, context) -> object:
