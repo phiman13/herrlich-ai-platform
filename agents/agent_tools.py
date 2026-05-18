@@ -6,6 +6,7 @@ verlässt (Parent-Traversal, absolute Pfade).
 """
 
 import os
+import re
 from pathlib import Path
 
 _MAX_FILE_CHARS = 60_000
@@ -58,3 +59,33 @@ def _do_read(rel_path: str) -> str:
     if len(text) > _MAX_FILE_CHARS:
         text = text[:_MAX_FILE_CHARS] + "\n[... gekürzt ...]"
     return text
+
+
+def _do_search(pattern: str, rel_path: str = "") -> str:
+    """Regex-Suche über Dateien im Workspace (rekursiv ab rel_path)."""
+    base = _resolve_in_workspace(rel_path or ".")
+    if base is None or not base.exists():
+        return f"FEHLER: Suchpfad '{rel_path}' ist ungültig."
+    try:
+        rx = re.compile(pattern)
+    except re.error as e:
+        return f"FEHLER: Ungültiges Suchmuster: {e}"
+    root = _workspace_root()
+    hits: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for fn in sorted(filenames):
+            fp = Path(dirpath) / fn
+            try:
+                with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
+                    for lineno, line in enumerate(fh, 1):
+                        if rx.search(line):
+                            hits.append(
+                                f"{fp.relative_to(root)}:{lineno}: {line.strip()[:200]}"
+                            )
+                            if len(hits) >= _SEARCH_MAX_HITS:
+                                hits.append("[... weitere Treffer abgeschnitten ...]")
+                                return "\n".join(hits)
+            except (OSError, UnicodeError):
+                continue
+    return "\n".join(hits) if hits else f"Keine Treffer für '{pattern}'."

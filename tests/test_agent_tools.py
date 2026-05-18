@@ -72,3 +72,33 @@ def test_do_read_binary_file_is_error(tmp_path, monkeypatch):
     result = agent_tools._do_read("img.png")
     assert result.startswith("FEHLER:")
     assert "Binärdatei" in result
+
+
+def test_do_search_finds_matches(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("x = 2\n", encoding="utf-8")
+    result = agent_tools._do_search("def foo")
+    assert "a.py:1:" in result
+    assert "b.py" not in result
+
+
+def test_do_search_no_match(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    assert "Keine Treffer" in agent_tools._do_search("nichtdrin")
+
+
+def test_do_search_skips_ignored_dirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "lib.js").write_text("needle", encoding="utf-8")
+    (tmp_path / "src.js").write_text("needle", encoding="utf-8")
+    result = agent_tools._do_search("needle")
+    assert "src.js" in result
+    assert "node_modules" not in result
+
+
+def test_do_search_invalid_regex_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    assert agent_tools._do_search("[unclosed").startswith("FEHLER:")
