@@ -114,15 +114,16 @@ Persistenz:
 
 ```
 Hetzner CX33 (4 vCPU, 8 GB RAM, Ubuntu 24.04, Helsinki)
-├── jarvis.service          systemd — läuft als root, Port 9000
-├── caddy                   Reverse Proxy — herrlich.dev → :9000
-├── /root/agents/           Git-Checkout (Source of Truth: GitHub)
-└── /root/.env              Secrets (TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, ...)
+├── jarvis.service               systemd — läuft als jarvis-User, Port 9000
+├── caddy                        Reverse Proxy — herrlich.dev → :9000
+├── /opt/herrlich-ai-platform/   Git-Checkout (Source of Truth: GitHub)
+├── /opt/jarvis/                 Laufzeit-Verzeichnis — rsync-Ziel von agents/
+└── /var/lib/jarvis/.env         Secrets (TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, ...)
 
 Mac (Entwicklung)
-├── ~/Documents/.../herrlich-ai-platform/   lokaler Clone
-├── .venv/                                  lokale virtuelle Umgebung
-└── launchd                                 auto git pull alle 10 Min
+├── ~/Code/herrlich-ai-platform/   lokaler Clone
+├── .venv/                         lokale virtuelle Umgebung
+└── launchd                        auto git pull alle 10 Min
 ```
 
 **Laufende Kosten:** Hetzner ~8,50 €/Mo · Domain ~1 €/Mo · Anthropic API ~2–5 €/Mo
@@ -141,10 +142,13 @@ journalctl -u jarvis -f --no-pager  # Logs live
 
 ## Deployment
 
+Deploy läuft **automatisch**: `git push` auf `main` → GitHub-Webhook → der VPS
+zieht den neuen Code nach `/opt/herrlich-ai-platform`, rsynct `agents/` →
+`/opt/jarvis/`, startet `jarvis` neu und meldet das Ergebnis per Telegram.
+
 ```bash
-# Von Mac: Push → VPS zieht automatisch beim nächsten Pull (launchd, alle 10 Min)
-# Oder manuell:
-ssh root@100.115.184.3 "cd /root/agents && git pull && systemctl restart jarvis"
+# Manuell (Notfall):
+ssh root@100.115.184.3 "cd /opt/herrlich-ai-platform && git pull && rsync -a --delete agents/ /opt/jarvis/ && systemctl restart jarvis"
 ```
 
 ---
@@ -153,5 +157,5 @@ ssh root@100.115.184.3 "cd /root/agents && git pull && systemctl restart jarvis"
 
 - `agents/claude-settings.json` — Claude Code Permission-Konfiguration
 - `scripts/claude-guard.sh` — Bash-Hook: blockt destruktive Befehle (rm -rf /, cat .env, ufw disable, …)
-- `.env` aus systemd `EnvironmentFile=/root/.env` geladen — nie im Repo
-- MS OAuth Token unter `/root/.jarvis/microsoft_tokens.json` (aus Claude-Lesezugriff geblockt)
+- `.env` aus systemd `EnvironmentFile=/var/lib/jarvis/.env` geladen — nie im Repo
+- MS OAuth Token unter `/var/lib/jarvis/.jarvis/microsoft_tokens.json` (aus Claude-Lesezugriff geblockt)
