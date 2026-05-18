@@ -1,6 +1,7 @@
 """Tests für agents/agent_tools.py."""
 
 import pytest
+from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
 import agent_tools
 
@@ -175,3 +176,18 @@ async def test_workspace_tool_search_empty_query(tmp_path, monkeypatch):
         {"action": "search", "path": "", "query": ""}
     )
     assert result["content"][0]["text"].startswith("FEHLER:")
+
+
+@pytest.mark.asyncio
+async def test_permission_hook_allows_workspace():
+    result = await agent_tools.permission_hook(
+        "mcp__jarvis__workspace", {"action": "read", "path": "x"}, None
+    )
+    assert isinstance(result, PermissionResultAllow)
+
+
+@pytest.mark.asyncio
+async def test_permission_hook_denies_unknown_tool():
+    result = await agent_tools.permission_hook("Bash", {"command": "rm -rf /"}, None)
+    assert isinstance(result, PermissionResultDeny)
+    assert result.interrupt is False
