@@ -39,7 +39,9 @@ BLOCKED_PATTERNS=(
 for pattern in "${BLOCKED_PATTERNS[@]}"; do
     if echo "$COMMAND" | grep -qiE "$pattern"; then
         echo "BLOCKED: Gefaehrlicher Befehl erkannt: $pattern" >&2
-        exit 1
+        # exit 2 = PreToolUse-Hook blockt das Tool. exit 1 wuerde NICHT
+        # blocken (gilt als nicht-blockierender Fehler) — der Befehl liefe.
+        exit 2
     fi
 done
 
