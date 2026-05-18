@@ -16,6 +16,7 @@ from voice_agent import transcribe
 from mail_handler import handle_mail_intent
 from calendar_handler import handle_calendar_intent
 from chat_handler import handle_research, handle_work, handle_personal
+from agent import run_agent, agent_enabled
 from intent_handlers import (
     handle_coding,
     handle_reminder_write,
@@ -31,6 +32,7 @@ logger = logging.getLogger("jarvis.dispatch")
 
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _HISTORY_INTENTS = {"personal", "work", "research"}
+_AGENT_INTENTS = {"personal", "work", "research"}
 
 
 async def start(update, context):
@@ -88,15 +90,15 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         except Exception as e:
             logger.warning("History load failed: %s", e)
 
-    if intent == "calendar":
+    if intent in _AGENT_INTENTS and agent_enabled():
+        answer = await run_agent(chat_id, text, history, memory_context)
+    elif intent == "calendar":
         await handle_calendar_intent(chat_id, text, params)
         return
-
-    if intent == "mail":
+    elif intent == "mail":
         await handle_mail_intent(chat_id, text, params)
         return
-
-    if intent == "research":
+    elif intent == "research":
         answer = await handle_research(chat_id, text, memory_context, history)
     elif intent == "coding":
         await handle_coding(chat_id, text, params, update)
