@@ -40,3 +40,21 @@ def _resolve_in_workspace(rel_path: str) -> Path | None:
     if candidate == root or root in candidate.parents:
         return candidate
     return None
+
+
+def _do_read(rel_path: str) -> str:
+    """Eine Datei im Workspace lesen. Strukturierter Fehlertext bei Problemen."""
+    target = _resolve_in_workspace(rel_path)
+    if target is None:
+        return f"FEHLER: Pfad '{rel_path}' liegt außerhalb des Workspace."
+    if not target.is_file():
+        return f"FEHLER: '{rel_path}' ist keine Datei oder existiert nicht."
+    data = target.read_bytes()
+    if b"\x00" in data[:4096]:
+        return (
+            f"FEHLER: '{rel_path}' ist eine Binärdatei und kann nicht gelesen werden."
+        )
+    text = data.decode("utf-8", errors="replace")
+    if len(text) > _MAX_FILE_BYTES:
+        text = text[:_MAX_FILE_BYTES] + "\n[... gekürzt ...]"
+    return text

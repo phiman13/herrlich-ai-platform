@@ -38,3 +38,29 @@ def test_resolve_rejects_symlink_escape(tmp_path, monkeypatch):
 
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(workspace))
     assert agent_tools._resolve_in_workspace("escape_link/secret.txt") is None
+
+
+def test_do_read_returns_file_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "hello.txt").write_text("Hallo Welt", encoding="utf-8")
+    assert agent_tools._do_read("hello.txt") == "Hallo Welt"
+
+
+def test_do_read_outside_workspace_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    result = agent_tools._do_read("../secret")
+    assert result.startswith("FEHLER:")
+
+
+def test_do_read_missing_file_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    result = agent_tools._do_read("nope.txt")
+    assert result.startswith("FEHLER:")
+
+
+def test_do_read_truncates_large_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "big.txt").write_text("x" * 80_000, encoding="utf-8")
+    result = agent_tools._do_read("big.txt")
+    assert "[... gekürzt ...]" in result
+    assert len(result) < 80_000
