@@ -315,6 +315,14 @@ _GITHUB_REPOS: dict[str, dict] = {
 - `post_restart`: `systemctl restart <service>` (nach 3s Delay via Popen)
 - `post_docker`: `docker compose up -d --build` im angegebenen Verzeichnis
 
+**Voraussetzung für `post_restart`:** Der Webhook läuft als `jarvis`-User. Damit
+`systemctl restart jarvis` nicht-interaktiv durchläuft, muss die polkit-Regel
+`/etc/polkit-1/rules.d/49-jarvis-restart.rules` existieren — sie erlaubt dem
+`jarvis`-User das Verwalten von `jarvis.service`. Fehlt sie, scheitert der
+Restart still mit „Interactive authentication required": git-pull + rsync laufen
+durch, aber der Prozess lädt den neuen Code **nicht** — Deploys wirken erst beim
+nächsten manuellen Neustart. Bei VPS-Neuaufbau die Regel mit anlegen.
+
 ---
 
 ## Key Commands
