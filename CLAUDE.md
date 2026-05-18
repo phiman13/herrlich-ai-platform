@@ -377,8 +377,10 @@ Das Agent SDK startet die `claude`-CLI als Subprozess — sie nutzt OAuth/Abo-Au
 1. Node.js + Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 2. Headless-Auth für den `jarvis`-User: `claude setup-token` ausführen, den Token
    als `CLAUDE_CODE_OAUTH_TOKEN` in `/var/lib/jarvis/.env` eintragen.
-3. `JARVIS_WORKSPACE_DIR` auf ein vom `jarvis`-User lesbares Verzeichnis mit den
-   Projekt-Klonen setzen (z. B. `/opt`).
+3. `JARVIS_WORKSPACE_DIR=/home/claude/workspace` setzen — dort liegen alle
+   Projekt-Klone (Workspace-Sync). `jarvis` braucht dafür Traverse-Recht auf den
+   Elternordner: `setfacl -m u:jarvis:--x /home/claude` (einmalig; `workspace`
+   selbst ist bereits world-lesbar).
 4. Falls `claude` nicht auf dem Service-PATH liegt: `JARVIS_CLAUDE_CLI_PATH` setzen.
 5. `JARVIS_AGENT_ENABLED` bleibt zunächst `0` — erst nach manueller Verifikation
    per Telegram auf `1` stellen und `jarvis` neu starten.
