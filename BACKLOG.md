@@ -14,14 +14,22 @@ Letzter Stand: 18.05.2026
 
 ## P1 — Nächster großer Schritt
 
-- [ ] **Agentischer Jarvis — der Gesprächs-Jarvis als echter Agent**
-      Ziel: Chats mit Jarvis so intelligent wie Chats mit Claude direkt. Der
-      Engpass ist die Architektur, nicht das Modell: `personal`/`work`/`research`
-      sind heute Single-shot-`messages.create()`-Aufrufe hinter dem Router —
-      kein Werkzeug-Zugriff, kein Iterieren, kein Code-/Datei-Kontext. Der
-      Gesprächspfad müsste ein Agent werden (Werkzeuge, Kontext, Denk-Schleife).
-      Enabler: Agent-SDK-Migration (P2) verschmilzt hiermit.
-      Design: `docs/plans/2026-05-18-agentischer-jarvis-design.md`.
+- [ ] **Agentischer Jarvis — Phase 2 & 3**
+      Phase 1 ist umgesetzt (`personal`/`work`/`research` laufen hinter dem
+      Feature-Flag `JARVIS_AGENT_ENABLED` durch einen echten Agenten auf dem
+      Claude Agent SDK; Werkzeuge `workspace` + `web`; Router bleibt vorgelagert).
+      Code gemergt, Flag default `0` — Aktivierung nach VPS-Vorbereitung +
+      Golden-Set-Verifikation (siehe Phase-1-Plan).
+      **Offen:**
+      - Phase 2: die strukturierten Handler (`weather`/`news` → `tasks`/`briefing`
+        → `mail`/`calendar` → `coding`) einzeln zu Agenten-Tools umbauen, mit
+        Write-Confirm-Fluss. Eigener Plan.
+      - Phase 3: `router.py` entfällt, der Agent ist alleinige Fronttür.
+      Design: `docs/plans/2026-05-18-agentischer-jarvis-design.md` ·
+      Phase-1-Plan: `docs/plans/2026-05-18-agentischer-jarvis-phase1-plan.md`.
+      Follow-ups aus dem Phase-1-Review: (1) freundlichere Fehlermeldung wenn die
+      `claude`-CLI auf dem VPS fehlt/nicht authentifiziert ist; (2) optional
+      Agent-Lauf nach Write-Confirm fortsetzen (v2).
 
 ---
 
