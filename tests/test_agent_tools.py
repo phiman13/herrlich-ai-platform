@@ -108,3 +108,28 @@ def test_do_search_outside_workspace_is_error(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
     result = agent_tools._do_search("needle", "../..")
     assert result.startswith("FEHLER:")
+
+
+def test_do_list_shows_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "readme.md").write_text("x", encoding="utf-8")
+    result = agent_tools._do_list("")
+    assert "proj/" in result
+    assert "readme.md" in result
+
+
+def test_do_list_hides_dotfiles_and_skipdirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".env").write_text("x", encoding="utf-8")
+    (tmp_path / "visible.txt").write_text("x", encoding="utf-8")
+    result = agent_tools._do_list("")
+    assert "visible.txt" in result
+    assert ".git" not in result
+    assert ".env" not in result
+
+
+def test_do_list_non_directory_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    assert agent_tools._do_list("nichtda").startswith("FEHLER:")

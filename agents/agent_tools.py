@@ -89,3 +89,16 @@ def _do_search(pattern: str, rel_path: str = "") -> str:
             except (OSError, UnicodeError):
                 continue
     return "\n".join(hits) if hits else f"Keine Treffer für '{pattern}'."
+
+
+def _do_list(rel_path: str = "") -> str:
+    """Ein Verzeichnis im Workspace auflisten (Dotfiles + Skip-Dirs ausgeblendet)."""
+    target = _resolve_in_workspace(rel_path or ".")
+    if target is None or not target.is_dir():
+        return f"FEHLER: '{rel_path}' ist kein Verzeichnis."
+    entries: list[str] = []
+    for child in sorted(target.iterdir()):
+        if child.name in _SKIP_DIRS or child.name.startswith("."):
+            continue
+        entries.append(f"{child.name}/" if child.is_dir() else child.name)
+    return "\n".join(entries) if entries else "(leer)"
