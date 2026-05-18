@@ -1,7 +1,7 @@
 # Agentischer Jarvis — Design
 
 **Status:** Design — freigegeben 2026-05-18
-**Umsetzung:** ab ~15.06.2026 (siehe Rollout) · Backlog: P1 in `BACKLOG.md`
+**Umsetzung:** ab sofort — Bau gestartet 2026-05-18 (siehe Rollout) · Backlog: P1 in `BACKLOG.md`
 **Verwandt:** Agent-SDK-Migration (P2, verschmilzt hiermit) · Second Brain (P2) · Code-Index (P3, entfällt — siehe YAGNI)
 
 ## Ziel
@@ -82,7 +82,7 @@ Additiv, kein Big-Bang, Jarvis durchgehend nutzbar. **Feature-Flag** (Env-Schalt
 
 Der Router ist also nicht Tag-1-weg, sondern das transitionale Gerüst — er retiriert am Ende.
 
-**Timing:** Das Agent SDK (Software) existiert bereits — der 15.06.2026 ist ein *Billing*-Gate (ab dann deckt das Abo-Guthaben Agent-SDK-Apps). Bauen und Testen von Phase 1 hängt nicht an der Frist (Dev-Traffic ist billig); nur der kostenrelevante Produktiv-Dauerbetrieb richtet sich nach dem 15.06.
+**Timing:** Kein Gate — die Umsetzung beginnt sofort (2026-05-18). Das Agent SDK läuft bereits heute auf dem normalen Monats-Budget des Claude-Abos (kein Pay-as-you-go). Am 15.06.2026 kommt lediglich ein *separates Zusatzbudget* für Agent-SDK-Apps dazu, das das normale Budget entlastet — eine Kostenentlastung, kein Startdatum.
 
 ## Test & Erfolgskriterien
 
