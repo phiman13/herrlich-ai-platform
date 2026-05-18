@@ -20,8 +20,8 @@ Letzter Stand: 18.05.2026
       sind heute Single-shot-`messages.create()`-Aufrufe hinter dem Router —
       kein Werkzeug-Zugriff, kein Iterieren, kein Code-/Datei-Kontext. Der
       Gesprächspfad müsste ein Agent werden (Werkzeuge, Kontext, Denk-Schleife).
-      Enabler: Agent-SDK-Migration (P2). Kontext-Baustein: Code-Index (P3).
-      Plan: folgt in `docs/plans/` (wird als Nächstes erstellt).
+      Enabler: Agent-SDK-Migration (P2) verschmilzt hiermit.
+      Design: `docs/plans/2026-05-18-agentischer-jarvis-design.md`.
 
 ---
 
