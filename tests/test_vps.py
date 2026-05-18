@@ -8,6 +8,7 @@ from agents.vps import (
     git_pull,
     write_file_and_commit,
     git_push,
+    _safe_cwd,
 )
 
 
@@ -95,6 +96,7 @@ def test_write_file_and_commit_success():
         )
     assert result is True
     calls = [c.args[0] for c in mock_run.call_args_list]
+    cwd = _safe_cwd("recipe-app")
     assert any(c[0] == "cp" for c in calls)
-    assert ["git", "add", "BACKLOG.md"] in calls
-    assert calls[-1][:2] == ["git", "commit"]
+    assert ["git", "-C", cwd, "add", "BACKLOG.md"] in calls
+    assert calls[-1] == ["git", "-C", cwd, "commit", "-m", "msg"]
