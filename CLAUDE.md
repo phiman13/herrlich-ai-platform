@@ -83,7 +83,7 @@ config/
   jarvis.service        systemd Unit
 
 tests/                  pytest-Suite (PYTHONPATH=agents)
-docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
+docs/plans/             Aktive Pläne (done/ = Archiv abgeschlossener)
 ```
 
 ---

@@ -1,8 +1,27 @@
 # Jarvis Platform — Backlog
 
-Master-Quelle: dieses File im Repo. Letzter Stand: 16.05.2026
+**Single Source of Truth für offene Entwicklung an Jarvis.** Jedes offene
+Vorhaben steht hier als priorisierter Eintrag; größere Vorhaben verlinken ihren
+Plan in `docs/plans/`. Beschreibt nie den Ist-Zustand — das tut `CLAUDE.md`.
+
+**Lebenszyklus:** Idee → Eintrag hier · wird ernst → Plan in `docs/plans/` ·
+fertig → `CLAUDE.md` aktualisiert, Eintrag raus, Plan nach `docs/plans/done/`.
+Doku-Modell: `docs/README.md`.
+
+Letzter Stand: 18.05.2026
 
 ---
+
+## P1 — Nächster großer Schritt
+
+- [ ] **Agentischer Jarvis — der Gesprächs-Jarvis als echter Agent**
+      Ziel: Chats mit Jarvis so intelligent wie Chats mit Claude direkt. Der
+      Engpass ist die Architektur, nicht das Modell: `personal`/`work`/`research`
+      sind heute Single-shot-`messages.create()`-Aufrufe hinter dem Router —
+      kein Werkzeug-Zugriff, kein Iterieren, kein Code-/Datei-Kontext. Der
+      Gesprächspfad müsste ein Agent werden (Werkzeuge, Kontext, Denk-Schleife).
+      Enabler: Agent-SDK-Migration (P2). Kontext-Baustein: Code-Index (P3).
+      Plan: folgt in `docs/plans/` (wird als Nächstes erstellt).
 
 ---
 
@@ -36,6 +55,11 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 16.05.2026
 - [ ] **Secret- & Permission-Hygiene auf VPS — Restarbeiten**
       Jarvis läuft jetzt als `jarvis`-User, Claude Code als `claude`-User. ✅
       Noch offen: 1Password-CLI für Env-Injection statt `.env` (`.env` liegt unter `/var/lib/jarvis/` mit restriktiven Rechten — akzeptables Risiko).
+
+- [ ] **Second Brain — Wissens-/Notizschicht**
+      Design liegt vor und ist approved: `docs/plans/2026-05-12-jarvis-second-brain-design.md`.
+      Offen: Umsetzung + Seed-Befüllung. Inhaltlich verwandt mit Code-Index (P3)
+      und agentischem Jarvis (P1) — beim Agenten-Plan mitdenken.
 
 ---
 
