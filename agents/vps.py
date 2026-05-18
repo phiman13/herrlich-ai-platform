@@ -146,3 +146,19 @@ async def git_push(project: str) -> bool:
         return False
     rc, _, _ = await run_as_claude(["git", "-C", cwd, "push"])
     return rc == 0
+
+
+async def git_commit_all(project: str, message: str) -> bool:
+    """Staget + committet alle Änderungen. True wenn ein Commit entstand,
+    False wenn nichts zu committen war oder bei Fehler."""
+    cwd = _safe_cwd(project)
+    if not cwd:
+        return False
+    rc, out, _ = await run_as_claude(["git", "-C", cwd, "status", "--porcelain"])
+    if rc != 0 or not out.strip():
+        return False  # nichts zu committen → kein Leer-Commit
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "add", "-A"])
+    if rc != 0:
+        return False
+    rc, _, _ = await run_as_claude(["git", "-C", cwd, "commit", "-m", message])
+    return rc == 0

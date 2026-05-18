@@ -9,6 +9,7 @@ try:
     from agents.db import SessionDB
     from agents.vps import (
         WORKSPACE,
+        git_commit_all,
         git_log,
         git_pull,
         git_push,
@@ -21,6 +22,7 @@ except ImportError:
     from db import SessionDB
     from vps import (
         WORKSPACE,
+        git_commit_all,
         git_log,
         git_pull,
         git_push,
@@ -296,6 +298,10 @@ async def run_coding_action(task: str, project: str, chat_id: int):
     if len(output) > 3800:
         output = output[:3800] + "\n\n[… gekürzt]"
 
+    # Falls Claude Änderungen nicht selbst committet hat: nachholen, damit der
+    # Push sie erfasst. Nur wenn der Claude-Lauf nicht hart gescheitert ist.
+    if session_id:
+        await git_commit_all(project, f"claude: {task[:60]}")
     pushed = await git_push(project)
     push_line = "📤 gepusht" if pushed else "⚠️ Push fehlgeschlagen"
 

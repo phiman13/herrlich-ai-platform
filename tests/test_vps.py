@@ -6,6 +6,7 @@ from agents.vps import (
     list_projects,
     git_log,
     git_pull,
+    git_commit_all,
     write_file_and_commit,
     git_push,
     _safe_cwd,
@@ -100,3 +101,30 @@ def test_write_file_and_commit_success():
     assert any(c[0] == "cp" for c in calls)
     assert ["git", "-C", cwd, "add", "BACKLOG.md"] in calls
     assert calls[-1] == ["git", "-C", cwd, "commit", "-m", "msg"]
+
+
+@pytest.mark.asyncio
+async def test_git_commit_all_commits_when_dirty():
+    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock:
+        mock.side_effect = [
+            (0, " M file.py\n", ""),  # status --porcelain: dirty
+            (0, "", ""),  # add -A
+            (0, "", ""),  # commit
+        ]
+        result = await git_commit_all("recipe-app", "msg")
+    assert result is True
+    calls = [c.args[0] for c in mock.call_args_list]
+    cwd = _safe_cwd("recipe-app")
+    assert ["git", "-C", cwd, "add", "-A"] in calls
+    assert calls[-1] == ["git", "-C", cwd, "commit", "-m", "msg"]
+
+
+@pytest.mark.asyncio
+async def test_git_commit_all_noop_when_clean():
+    with patch("agents.vps.run_as_claude", new_callable=AsyncMock) as mock:
+        mock.return_value = (0, "", "")  # status --porcelain: leer
+        result = await git_commit_all("recipe-app", "msg")
+    assert result is False
+    calls = [c.args[0] for c in mock.call_args_list]
+    assert len(calls) == 1  # nur status, kein add/commit
+    assert all("commit" not in c for c in calls)
