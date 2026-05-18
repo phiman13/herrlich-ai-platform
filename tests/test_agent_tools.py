@@ -102,3 +102,9 @@ def test_do_search_skips_ignored_dirs(tmp_path, monkeypatch):
 def test_do_search_invalid_regex_is_error(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
     assert agent_tools._do_search("[unclosed").startswith("FEHLER:")
+
+
+def test_do_search_outside_workspace_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    result = agent_tools._do_search("needle", "../..")
+    assert result.startswith("FEHLER:")
