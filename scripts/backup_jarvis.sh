@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Tägliches Backup der Jarvis-Datenbanken und MS-Token.
-# Cron (als root): 0 3 * * * /root/agents/scripts/backup_jarvis.sh >> /var/log/jarvis-backup.log 2>&1
+# Cron (als root): 0 3 * * * /opt/herrlich-ai-platform/scripts/backup_jarvis.sh >> /var/log/jarvis-backup.log 2>&1
 
 set -euo pipefail
 
-JARVIS_DIR="${JARVIS_DATA_DIR:-/root/.jarvis}"
+JARVIS_DIR="${JARVIS_DATA_DIR:-/var/lib/jarvis/.jarvis}"
 BACKUP_BASE="/root/backups/jarvis"
 DATE=$(date +%Y-%m-%d)
 BACKUP_DIR="$BACKUP_BASE/$DATE"
