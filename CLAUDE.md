@@ -118,7 +118,7 @@ docs/superpowers/       Specs + Pläne aus Entwicklungs-Sessions
 | `sessions.db` | `SessionDB` | Claude-Code-Session-IDs pro Projekt (TTL 2h) |
 | `proactive.db` | `ProactiveDB` | reported_mails (mail_id, reported_at) + reminded_tasks (task_id, reminded_at) — 30-Tage-TTL |
 | `microsoft_tokens.json` | — | MSAL Token-Cache (verschlüsselt durch MSAL) |
-| `scheduler.db` | APScheduler | Persistente Job-Definitionen (restart-safe) |
+| `jarvis_jobs.db` | APScheduler | Persistente Job-Definitionen (restart-safe) |
 
 ---
 
@@ -280,7 +280,7 @@ with patch("agents.mail_agent.get_access_token", return_value="tok"), \
 | `send_task_reminder` | 10:00 täglich | Überfällige Tasks | — |
 | `send_weekly_review` | Fr 17:00 | Wochenrückblick | Sonnet |
 
-Jobs werden in `scheduler.db` (SQLite) persistiert — überleben Neustarts.
+Jobs werden in `jarvis_jobs.db` (SQLite) persistiert — überleben Neustarts.
 
 ---
 
