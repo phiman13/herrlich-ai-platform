@@ -64,3 +64,11 @@ def test_do_read_truncates_large_file(tmp_path, monkeypatch):
     result = agent_tools._do_read("big.txt")
     assert "[... gekürzt ...]" in result
     assert len(result) < 80_000
+
+
+def test_do_read_binary_file_is_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    (tmp_path / "img.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10)
+    result = agent_tools._do_read("img.png")
+    assert result.startswith("FEHLER:")
+    assert "Binärdatei" in result

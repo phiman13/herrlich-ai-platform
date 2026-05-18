@@ -8,7 +8,7 @@ verlässt (Parent-Traversal, absolute Pfade).
 import os
 from pathlib import Path
 
-_MAX_FILE_BYTES = 60_000
+_MAX_FILE_CHARS = 60_000
 _SEARCH_MAX_HITS = 60
 _SKIP_DIRS = {
     ".git",
@@ -55,6 +55,6 @@ def _do_read(rel_path: str) -> str:
             f"FEHLER: '{rel_path}' ist eine Binärdatei und kann nicht gelesen werden."
         )
     text = data.decode("utf-8", errors="replace")
-    if len(text) > _MAX_FILE_BYTES:
-        text = text[:_MAX_FILE_BYTES] + "\n[... gekürzt ...]"
+    if len(text) > _MAX_FILE_CHARS:
+        text = text[:_MAX_FILE_CHARS] + "\n[... gekürzt ...]"
     return text
