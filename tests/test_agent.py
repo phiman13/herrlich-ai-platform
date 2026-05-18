@@ -43,7 +43,8 @@ def test_format_history_empty():
 def test_format_history_caps_turns():
     history = [{"role": "user", "content": f"m{i}"} for i in range(100)]
     text = agent.format_history(history)
-    assert text.count("\n") < 60  # auf ~15 Turns (= 30 Zeilen) gekappt
+    # 100 Einträge -> auf _HISTORY_TURNS*2 (=30) gekappt -> 29 Zeilenumbrüche
+    assert text.count("\n") == (agent._HISTORY_TURNS * 2) - 1
 
 
 def test_build_user_prompt_with_history():
@@ -56,3 +57,9 @@ def test_build_user_prompt_with_history():
 
 def test_build_user_prompt_no_history():
     assert agent.build_user_prompt([], "nur die Frage") == "nur die Frage"
+
+
+def test_agent_enabled_all_truthy_values(monkeypatch):
+    for val in ("1", "true", "yes", "on", "True", "YES", " 1 "):
+        monkeypatch.setenv("JARVIS_AGENT_ENABLED", val)
+        assert agent.agent_enabled() is True, f"Expected True for {val!r}"
