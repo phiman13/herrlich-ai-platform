@@ -50,11 +50,15 @@ Diese Fakten wurden mit `claude-agent-sdk==0.2.82` real verifiziert — der Plan
 
 ## Konventionen für alle Tasks
 
-- Tests laufen aus dem Worktree-Verzeichnis. Standard-Kommando:
+- Tests laufen aus dem Worktree-Verzeichnis. `<REPO>` = `/Users/philippherrlich/Code/herrlich-ai-platform`; die `conftest.py` macht den Pfad-Fixup auf den Worktree.
+- **Volle Suite** (Baseline: **169 passed**):
   ```
-  PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short
+  PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short \
+    --ignore=tests/test_briefing_agent.py \
+    --ignore=tests/test_mail_send.py \
+    --ignore=tests/test_tasks_agent.py
   ```
-  wobei `<REPO>` = `/Users/philippherrlich/Code/herrlich-ai-platform`. Die `conftest.py` macht den Pfad-Fixup auf den Worktree.
+  Die drei ignorierten Dateien brauchen Live-APIs/Credentials und schlagen lokal ohne diese fehl — das ist vorbestehend und erwartet, **nicht** durch diese Tasks verursacht.
 - `claude-agent-sdk` ist im venv bereits installiert (Verifikation Schritt A). Falls nicht: `<REPO>/.venv/bin/pip install claude-agent-sdk`.
 - Commits auf Deutsch, Typ-Präfix (`feat`/`test`/`chore`/`docs`).
 - Nach jedem Task: gesamte Suite grün halten (Baseline: 169 Tests).
@@ -81,7 +85,7 @@ Expected: Ausgabe `0.2.82`, kein Fehler.
 
 - [ ] **Step 3: Baseline-Suite läuft weiter**
 
-Run: `PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short`
+Run: die volle Suite (siehe Konventionen — mit `--ignore` der Live-API-Tests).
 Expected: PASS (169 passed — die neue Abhängigkeit bricht nichts).
 
 - [ ] **Step 4: Commit**
@@ -1210,7 +1214,7 @@ Expected: PASS (neue Tests + bestehende Dispatch-Tests).
 
 - [ ] **Step 5: Gesamte Suite grün**
 
-Run: `PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short`
+Run: die volle Suite (siehe Konventionen).
 Expected: PASS (Baseline 169 + neue Tests).
 
 - [ ] **Step 6: Commit**
@@ -1283,7 +1287,7 @@ async def test_agent_reads_workspace_file(tmp_path, monkeypatch):
 
 - [ ] **Step 2: Standard-Suite verifizieren (Live-Test wird geskippt)**
 
-Run: `PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short`
+Run: die volle Suite (siehe Konventionen).
 Expected: PASS — `test_agent_live.py` erscheint als `skipped`, die übrige Suite grün.
 
 - [ ] **Step 3: Live-Test ausführen (lokal, CLI vorhanden)**
@@ -1377,7 +1381,7 @@ Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/t
 
 - [ ] **Step 4: Gesamte Suite grün**
 
-Run: `PYTHONPATH=agents <REPO>/.venv/bin/pytest tests/ -q --tb=short`
+Run: die volle Suite (siehe Konventionen).
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
