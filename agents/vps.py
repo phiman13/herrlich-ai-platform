@@ -88,12 +88,19 @@ async def git_log(project: str, n: int = 10) -> str:
     return stdout if rc == 0 else "git log failed"
 
 
-async def git_pull(project: str) -> bool:
-    """Pull latest changes. Returns True on success."""
+async def git_pull(project: str, ff_only: bool = False) -> bool:
+    """Pull latest changes. Returns True on success.
+
+    ff_only=True: nur Fast-Forward — verwirft/merged nie etwas, schlägt bei
+    Divergenz still fehl. Für den Hintergrund-Sync, der nichts kaputtmachen darf.
+    """
     cwd = _safe_cwd(project)
     if not cwd:
         return False
-    rc, _, _ = await run_as_claude(["git", "-C", cwd, "pull", "--quiet"])
+    cmd = ["git", "-C", cwd, "pull", "--quiet"]
+    if ff_only:
+        cmd.append("--ff-only")
+    rc, _, _ = await run_as_claude(cmd)
     return rc == 0
 
 

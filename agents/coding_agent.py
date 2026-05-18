@@ -311,3 +311,76 @@ async def run_coding_action(task: str, project: str, chat_id: int):
         text=f"✅ *{project}* — fertig · {push_line}\n\n{output}",
         parse_mode="Markdown",
     )
+
+
+def _filter_repos(repos: list[dict]) -> list[str]:
+    """Aus der GitHub-API-Antwort die relevanten Repo-Namen: nicht archiviert,
+    keine Forks."""
+    return sorted(
+        r["name"]
+        for r in repos
+        if not r.get("archived", False) and not r.get("fork", False)
+    )
+
+
+async def list_github_repos() -> list[str]:
+    """Alle eigenen, nicht-archivierten Repos (ohne Forks) des Accounts."""
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    if not github_token:
+        return []
+    proc = await asyncio.create_subprocess_exec(
+        "curl",
+        "-sf",
+        "-H",
+        f"Authorization: token {github_token}",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "https://api.github.com/user/repos?per_page=100&affiliation=owner",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        data = json.loads(stdout.decode())
+    except Exception:
+        logger.warning("list_github_repos: GitHub-Abfrage fehlgeschlagen")
+        return []
+    if not isinstance(data, list):
+        return []
+    return _filter_repos(data)
+
+
+async def sync_workspace(chat_id: int) -> None:
+    """Geplanter Job: GitHub-Repos mit dem VPS-Workspace abgleichen — neue
+    klonen, vorhandene per ff-only-Pull aktuell halten."""
+    await _ensure_init()
+    repos = await list_github_repos()
+    if not repos:
+        logger.warning("sync_workspace: keine Repos von GitHub erhalten")
+        return
+    existing = set(await list_projects())
+    newly_cloned = []
+    for repo in repos:
+        if repo in existing:
+            await git_pull(repo, ff_only=True)
+        else:
+            status = await _check_and_clone(repo)
+            if status == "cloned":
+                newly_cloned.append(repo)
+            else:
+                logger.info("sync_workspace: %s -> %s", repo, status)
+    logger.info(
+        "sync_workspace: %d Repos geprüft, %d neu geklont",
+        len(repos),
+        len(newly_cloned),
+    )
+    if newly_cloned and chat_id:
+        try:
+            bot = Bot(token=TELEGRAM_TOKEN)
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"📥 Neue Repos in den VPS-Workspace geklont: "
+                f"{', '.join(newly_cloned)}",
+            )
+        except Exception:
+            logger.exception("sync_workspace: Telegram-Notiz fehlgeschlagen")

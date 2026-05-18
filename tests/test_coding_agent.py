@@ -1,15 +1,24 @@
 # tests/test_coding_agent.py
-import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from agents.coding_agent import handle_coding_query, _run_claude_action, add_backlog_item, _check_and_clone, _resolve_project
+from agents.coding_agent import (
+    handle_coding_query,
+    _run_claude_action,
+    add_backlog_item,
+    _check_and_clone,
+    _resolve_project,
+    _filter_repos,
+    sync_workspace,
+)
 
 
 @pytest.mark.asyncio
 async def test_query_backlog():
-    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
-         patch("agents.coding_agent.git_pull", new_callable=AsyncMock) as mock_pull, \
-         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with (
+        patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock) as mock_pull,
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+    ):
         mock_pull.return_value = True
         mock_list.return_value = ["recipe-app", "immo-radar"]
         mock_read.return_value = "# Backlog\n- [ ] Fix login\n- [ ] Add tests\n"
@@ -20,9 +29,11 @@ async def test_query_backlog():
 
 @pytest.mark.asyncio
 async def test_query_git_log():
-    with patch("agents.coding_agent.git_log", new_callable=AsyncMock) as mock_log, \
-         patch("agents.coding_agent.git_pull", new_callable=AsyncMock) as mock_pull, \
-         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with (
+        patch("agents.coding_agent.git_log", new_callable=AsyncMock) as mock_log,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock) as mock_pull,
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+    ):
         mock_pull.return_value = True
         mock_list.return_value = ["recipe-app"]
         mock_log.return_value = "abc1234 Fix auth\ndef5678 Add tests\n"
@@ -32,8 +43,12 @@ async def test_query_git_log():
 
 @pytest.mark.asyncio
 async def test_query_unknown_project():
-    with patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list, \
-         patch("agents.coding_agent._check_and_clone", new_callable=AsyncMock) as mock_clone:
+    with (
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+        patch(
+            "agents.coding_agent._check_and_clone", new_callable=AsyncMock
+        ) as mock_clone,
+    ):
         mock_list.return_value = ["recipe-app", "immo-radar"]
         mock_clone.return_value = "not_found"
         result = await handle_coding_query("nonexistent-project", "backlog")
@@ -43,9 +58,11 @@ async def test_query_unknown_project():
 @pytest.mark.asyncio
 async def test_query_backlog_falls_back_to_todo():
     """Wenn kein BACKLOG.md, fällt zurück auf TODO.md"""
-    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
-         patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
-         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with (
+        patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock),
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+    ):
         mock_list.return_value = ["recipe-app"]
         # BACKLOG.md fehlt, TODO.md vorhanden
         mock_read.side_effect = [None, "- [ ] Todo item\n"]
@@ -61,8 +78,10 @@ async def test_action_parses_session_id():
         '{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}\n'
         '{"type":"result","subtype":"success","session_id":"sess_abc123","result":"Fixed."}\n'
     )
-    with patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run, \
-         patch("agents.coding_agent._db") as mock_db:
+    with (
+        patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run,
+        patch("agents.coding_agent._db") as mock_db,
+    ):
         mock_run.return_value = (0, fake_output, "")
         mock_db.upsert_session = AsyncMock()
         session_id, output = await _run_claude_action(
@@ -76,9 +95,15 @@ async def test_action_parses_session_id():
 
 @pytest.mark.asyncio
 async def test_action_uses_resume_when_session_exists():
-    with patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run, \
-         patch("agents.coding_agent._db") as mock_db:
-        mock_run.return_value = (0, '{"type":"result","session_id":"sess_xyz","result":"ok"}\n', "")
+    with (
+        patch("agents.coding_agent.run_as_claude", new_callable=AsyncMock) as mock_run,
+        patch("agents.coding_agent._db") as mock_db,
+    ):
+        mock_run.return_value = (
+            0,
+            '{"type":"result","session_id":"sess_xyz","result":"ok"}\n',
+            "",
+        )
         mock_db.upsert_session = AsyncMock()
         await _run_claude_action(
             project="recipe-app",
@@ -93,11 +118,15 @@ async def test_action_uses_resume_when_session_exists():
 @pytest.mark.asyncio
 async def test_backlog_add_item():
     existing = "# Backlog\n\n## P1\n- [ ] Fix login\n"
-    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
-         patch("agents.coding_agent.write_file_and_commit", new_callable=AsyncMock) as mock_write, \
-         patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
-         patch("agents.coding_agent.git_push", new_callable=AsyncMock) as mock_push, \
-         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with (
+        patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read,
+        patch(
+            "agents.coding_agent.write_file_and_commit", new_callable=AsyncMock
+        ) as mock_write,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock),
+        patch("agents.coding_agent.git_push", new_callable=AsyncMock) as mock_push,
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+    ):
         mock_list.return_value = ["recipe-app"]
         mock_read.return_value = existing
         mock_write.return_value = True
@@ -155,10 +184,65 @@ def test_resolve_project_no_match():
 
 @pytest.mark.asyncio
 async def test_query_uses_fuzzy_project():
-    with patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read, \
-         patch("agents.coding_agent.git_pull", new_callable=AsyncMock), \
-         patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list:
+    with (
+        patch("agents.coding_agent.read_file", new_callable=AsyncMock) as mock_read,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock),
+        patch("agents.coding_agent.list_projects", new_callable=AsyncMock) as mock_list,
+    ):
         mock_list.return_value = ["recipe-app", "immo-radar"]
         mock_read.return_value = "# Backlog\n- [ ] Fix login\n"
         result = await handle_coding_query("immo", "backlog")
     assert "Fix login" in result
+
+
+def test_filter_repos_excludes_archived_and_forks():
+    repos = [
+        {"name": "jarvis", "archived": False, "fork": False},
+        {"name": "alt-projekt", "archived": True, "fork": False},
+        {"name": "fork-von-x", "archived": False, "fork": True},
+        {"name": "recipe-app", "archived": False, "fork": False},
+    ]
+    assert _filter_repos(repos) == ["jarvis", "recipe-app"]
+
+
+def test_filter_repos_empty():
+    assert _filter_repos([]) == []
+
+
+@pytest.mark.asyncio
+async def test_sync_workspace_clones_new_pulls_existing():
+    with (
+        patch(
+            "agents.coding_agent.list_github_repos", new_callable=AsyncMock
+        ) as m_list,
+        patch(
+            "agents.coding_agent.list_projects", new_callable=AsyncMock
+        ) as m_existing,
+        patch(
+            "agents.coding_agent._check_and_clone", new_callable=AsyncMock
+        ) as m_clone,
+        patch("agents.coding_agent.git_pull", new_callable=AsyncMock) as m_pull,
+        patch("agents.coding_agent._ensure_init", new_callable=AsyncMock),
+    ):
+        m_list.return_value = ["jarvis", "neu-repo"]
+        m_existing.return_value = ["jarvis"]
+        m_clone.return_value = "cloned"
+        await sync_workspace(0)
+    m_clone.assert_awaited_once_with("neu-repo")
+    m_pull.assert_awaited_once_with("jarvis", ff_only=True)
+
+
+@pytest.mark.asyncio
+async def test_sync_workspace_noop_when_github_empty():
+    with (
+        patch(
+            "agents.coding_agent.list_github_repos", new_callable=AsyncMock
+        ) as m_list,
+        patch(
+            "agents.coding_agent._check_and_clone", new_callable=AsyncMock
+        ) as m_clone,
+        patch("agents.coding_agent._ensure_init", new_callable=AsyncMock),
+    ):
+        m_list.return_value = []
+        await sync_workspace(0)
+    m_clone.assert_not_awaited()

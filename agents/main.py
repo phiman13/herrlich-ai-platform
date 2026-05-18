@@ -192,8 +192,18 @@ async def startup():
             id="weekly_review_friday",
             replace_existing=True,
         )
+        from coding_agent import sync_workspace
+
+        _scheduler.add_job(
+            sync_workspace,
+            CronTrigger(minute=0, timezone="Europe/Berlin"),
+            args=[_chat_id],
+            id="workspace_sync",
+            replace_existing=True,
+        )
         logger.info(
-            "Proaktive Jobs registriert: mail_check x2, task_reminder, weekly_review"
+            "Proaktive Jobs registriert: mail_check x2, task_reminder, "
+            "weekly_review, workspace_sync (stündlich)"
         )
     else:
         logger.warning("TELEGRAM_CHAT_ID nicht gesetzt — proaktive Jobs deaktiviert")
