@@ -165,3 +165,13 @@ async def test_workspace_tool_unknown_action(tmp_path, monkeypatch):
 def test_build_mcp_server_registers_workspace():
     server = agent_tools.build_mcp_server()
     assert server is not None
+    assert agent_tools.workspace_tool.name == "workspace"
+
+
+@pytest.mark.asyncio
+async def test_workspace_tool_search_empty_query(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
+    result = await agent_tools.workspace_tool.handler(
+        {"action": "search", "path": "", "query": ""}
+    )
+    assert result["content"][0]["text"].startswith("FEHLER:")

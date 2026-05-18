@@ -9,7 +9,7 @@ import os
 import re
 from pathlib import Path
 
-from claude_agent_sdk import create_sdk_mcp_server, tool
+from claude_agent_sdk import McpSdkServerConfig, create_sdk_mcp_server, tool
 
 _MAX_FILE_CHARS = 60_000
 _SEARCH_MAX_HITS = 60
@@ -121,7 +121,12 @@ async def workspace_tool(args: dict) -> dict:
     if action == "read":
         result = _do_read(path)
     elif action == "search":
-        result = _do_search(query, path)
+        if not query:
+            result = (
+                "FEHLER: action='search' erfordert ein nicht-leeres 'query'-Suchmuster."
+            )
+        else:
+            result = _do_search(query, path)
     elif action == "list":
         result = _do_list(path)
     else:
@@ -129,6 +134,6 @@ async def workspace_tool(args: dict) -> dict:
     return {"content": [{"type": "text", "text": result}]}
 
 
-def build_mcp_server():
+def build_mcp_server() -> McpSdkServerConfig:
     """In-Process-MCP-Server mit dem workspace-Tool."""
     return create_sdk_mcp_server(name="jarvis", version="1.0.0", tools=[workspace_tool])
