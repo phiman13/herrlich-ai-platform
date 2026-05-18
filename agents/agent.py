@@ -113,6 +113,8 @@ async def run_agent(
                 model=os.environ.get("JARVIS_AGENT_MODEL", _DEFAULT_MODEL),
                 system_prompt=build_system_prompt(memory_context),
                 mcp_servers={"jarvis": build_mcp_server()},
+                # tools: beschränkt die eingebauten Werkzeuge (kein Bash/Edit/Read).
+                # allowed_tools: auto-erlaubt — überspringt den can_use_tool-Hook.
                 allowed_tools=["WebSearch", "WebFetch"],
                 tools=["WebSearch", "WebFetch"],
                 can_use_tool=permission_hook,
@@ -138,6 +140,7 @@ async def run_agent(
                         if isinstance(block, TextBlock) and block.text.strip():
                             final_text = block.text
                 elif isinstance(msg, ResultMessage):
+                    # ResultMessage kommt zuletzt — überschreibt den Zwischentext.
                     if msg.result:
                         final_text = msg.result
                     elif msg.is_error and not final_text:

@@ -126,16 +126,19 @@ async def test_run_agent_handles_query_exception():
 
     mock_bot = MagicMock()
     mock_bot.send_message = AsyncMock()
+    mock_keep_typing = AsyncMock()
     app_state.agent_run_locks.clear()
     with (
         patch("agent.query", boom),
         patch("agent.Bot", return_value=mock_bot),
-        patch("agent._keep_typing", new=AsyncMock()),
+        patch("agent._keep_typing", mock_keep_typing),
     ):
         answer = await agent.run_agent(555, "Hallo", [], "")
 
     assert answer.startswith("Fehler:")
     mock_bot.send_message.assert_awaited_once()
+    # finally-Block muss den Typing-Task auch im Fehlerfall sauber beenden
+    mock_keep_typing.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -163,3 +166,21 @@ async def test_run_agent_serializes_per_chat():
 
     # Serialisiert: erst beide Schritte von Lauf 1, dann Lauf 2 — kein Interleaving.
     assert order == ["start", "end", "start", "end"]
+
+
+@pytest.mark.asyncio
+async def test_run_agent_uses_assistant_text_without_result():
+    async def fake_query(*, prompt, options=None, transport=None):
+        yield _fake_assistant("Nur Assistant-Text")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    with (
+        patch("agent.query", fake_query),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        answer = await agent.run_agent(556, "Hallo", [], "")
+
+    assert answer == "Nur Assistant-Text"
