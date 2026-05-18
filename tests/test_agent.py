@@ -1,6 +1,9 @@
 """Tests für agents/agent.py."""
 
+import asyncio
+
 import agent
+import app_state
 
 
 def test_agent_enabled_default_off(monkeypatch):
@@ -63,3 +66,13 @@ def test_agent_enabled_all_truthy_values(monkeypatch):
     for val in ("1", "true", "yes", "on", "True", "YES", " 1 "):
         monkeypatch.setenv("JARVIS_AGENT_ENABLED", val)
         assert agent.agent_enabled() is True, f"Expected True for {val!r}"
+
+
+def test_get_agent_lock_returns_same_lock_per_chat():
+    app_state.agent_run_locks.clear()
+    lock_a1 = app_state.get_agent_lock(111)
+    lock_a2 = app_state.get_agent_lock(111)
+    lock_b = app_state.get_agent_lock(222)
+    assert lock_a1 is lock_a2
+    assert lock_a1 is not lock_b
+    assert isinstance(lock_a1, asyncio.Lock)

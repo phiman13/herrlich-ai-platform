@@ -24,6 +24,19 @@ last_calendar_search: dict[int, dict] = {}
 # Telegram update dedup.
 processed_updates: set = set()
 
+# Per-Chat-Locks — serialisieren agentische Läufe innerhalb eines Chats.
+agent_run_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_agent_lock(chat_id: int) -> asyncio.Lock:
+    """Den (lazy erzeugten) asyncio.Lock für einen Chat zurückgeben."""
+    lock = agent_run_locks.get(chat_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        agent_run_locks[chat_id] = lock
+    return lock
+
+
 # Lazy-initialized agents — set by startup().
 memory_agent = None
 conversation_db = None
