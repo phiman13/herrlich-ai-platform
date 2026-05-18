@@ -41,6 +41,15 @@ Master-Quelle: dieses File im Repo. Letzter Stand: 16.05.2026
 
 ## P3 — Später / Nice to have
 
+- [ ] **Code-Index / RAG für den Gesprächs-Jarvis**
+      personal/work/research kennen den eigenen Code nicht — sie nutzen nur das
+      Gesprächs-Gedächtnis. Für fundierte Antworten über die eigenen Projekte im
+      normalen Chat: Embeddings über die Repo-Dateien im Workspace (analog
+      MemoryAgent) + Retrieval bei passenden Fragen.
+      Vorher brainstormen: welche Dateien indexieren, Update-Trigger (beim
+      Workspace-Sync?), Kontext-Budget, Abgrenzung zum Coding-Agent (liest pro
+      Aufgabe ohnehin).
+
 - [ ] **UptimeRobot Monitoring**
       Health-Checks für jarvis.service und Webhook-Endpoint.
 
