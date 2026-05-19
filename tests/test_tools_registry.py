@@ -1,0 +1,27 @@
+"""Tests für agents/tools/__init__.py — MCP-Server-Bau + Permission-Hook."""
+
+import pytest
+from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
+import tools
+
+
+def test_build_mcp_server_registers_workspace():
+    server = tools.build_mcp_server()
+    assert server is not None
+    assert "mcp__jarvis__workspace" in tools._ALLOWED_TOOL_NAMES
+
+
+@pytest.mark.asyncio
+async def test_permission_hook_allows_workspace():
+    result = await tools.permission_hook(
+        "mcp__jarvis__workspace", {"action": "read", "path": "x"}, None
+    )
+    assert isinstance(result, PermissionResultAllow)
+
+
+@pytest.mark.asyncio
+async def test_permission_hook_denies_unknown_tool():
+    result = await tools.permission_hook("Bash", {}, None)
+    assert isinstance(result, PermissionResultDeny)
+    assert result.interrupt is False

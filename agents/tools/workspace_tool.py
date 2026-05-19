@@ -1,21 +1,15 @@
-"""Agent-SDK-Werkzeuge — der workspace-Tool, der MCP-Server, das Permission-Gate.
+"""workspace-Tool — liest und durchsucht Dateien in Philipps Coding-Workspace.
 
 Sicherheitsmodell: der workspace-Tool liest ausschließlich unterhalb von
 JARVIS_WORKSPACE_DIR. _resolve_in_workspace lehnt jeden Pfad ab, der den Root
-verlässt (Parent-Traversal, absolute Pfade).
+verlässt (Parent-Traversal, absolute Pfade, Symlink-Escape).
 """
 
 import os
 import re
 from pathlib import Path
 
-from claude_agent_sdk import (
-    McpSdkServerConfig,
-    PermissionResultAllow,
-    PermissionResultDeny,
-    create_sdk_mcp_server,
-    tool,
-)
+from claude_agent_sdk import tool
 
 _MAX_FILE_CHARS = 60_000
 _SEARCH_MAX_HITS = 60
@@ -30,8 +24,6 @@ _SKIP_DIRS = {
     ".next",
     ".worktrees",
 }
-# Voller MCP-Tool-Name: mcp__<server-name>__<tool-name>
-_WORKSPACE_TOOL_NAME = "mcp__jarvis__workspace"
 
 
 def _workspace_root() -> Path:
@@ -140,23 +132,3 @@ async def workspace_tool(args: dict) -> dict:
     else:
         result = f"FEHLER: Unbekannte action '{action}'. Erlaubt: read, search, list."
     return {"content": [{"type": "text", "text": result}]}
-
-
-def build_mcp_server() -> McpSdkServerConfig:
-    """In-Process-MCP-Server mit dem workspace-Tool."""
-    return create_sdk_mcp_server(name="jarvis", version="1.0.0", tools=[workspace_tool])
-
-
-async def permission_hook(tool_name: str, tool_input: dict, context) -> object:
-    """can_use_tool-Gate. Phase 1: nur der Lese-Tool workspace ist freigegeben.
-
-    Feuert nur für Tools, die NICHT in allowed_tools stehen (WebSearch/WebFetch
-    sind dort gelistet → auto-erlaubt). Phase 2 erweitert dies um Schreib-/
-    Confirm-Aktionen.
-    """
-    if tool_name == _WORKSPACE_TOOL_NAME:
-        return PermissionResultAllow(updated_input=tool_input)
-    return PermissionResultDeny(
-        message=f"Werkzeug '{tool_name}' ist nicht freigegeben.",
-        interrupt=False,
-    )

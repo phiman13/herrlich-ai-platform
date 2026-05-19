@@ -19,7 +19,7 @@ from claude_agent_sdk import (
 )
 
 import app_state
-from agent_tools import build_mcp_server, permission_hook
+from tools import build_mcp_server, permission_hook
 from app_state import _keep_typing
 
 logger = logging.getLogger("jarvis.agent")

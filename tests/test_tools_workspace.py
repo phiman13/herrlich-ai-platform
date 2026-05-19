@@ -1,9 +1,8 @@
-"""Tests für agents/agent_tools.py."""
+"""Tests für agents/tools/workspace_tool.py."""
+
+import tools.workspace_tool as agent_tools
 
 import pytest
-from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
-
-import agent_tools
 
 
 def test_resolve_inside_workspace(tmp_path, monkeypatch):
@@ -163,12 +162,6 @@ async def test_workspace_tool_unknown_action(tmp_path, monkeypatch):
     assert result["content"][0]["text"].startswith("FEHLER:")
 
 
-def test_build_mcp_server_registers_workspace():
-    server = agent_tools.build_mcp_server()
-    assert server is not None
-    assert agent_tools.workspace_tool.name == "workspace"
-
-
 @pytest.mark.asyncio
 async def test_workspace_tool_search_empty_query(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE_DIR", str(tmp_path))
@@ -176,18 +169,3 @@ async def test_workspace_tool_search_empty_query(tmp_path, monkeypatch):
         {"action": "search", "path": "", "query": ""}
     )
     assert result["content"][0]["text"].startswith("FEHLER:")
-
-
-@pytest.mark.asyncio
-async def test_permission_hook_allows_workspace():
-    result = await agent_tools.permission_hook(
-        "mcp__jarvis__workspace", {"action": "read", "path": "x"}, None
-    )
-    assert isinstance(result, PermissionResultAllow)
-
-
-@pytest.mark.asyncio
-async def test_permission_hook_denies_unknown_tool():
-    result = await agent_tools.permission_hook("Bash", {}, None)
-    assert isinstance(result, PermissionResultDeny)
-    assert result.interrupt is False
