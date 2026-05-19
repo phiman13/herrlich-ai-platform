@@ -20,16 +20,16 @@ agents/router.py            Claude Haiku — klassifiziert Intent
         │                   Input: aktueller Text + letzte 3 User-Nachrichten
         │                   Output: {intent, confidence, params, reasoning}
         │
-        ├── mail            mail_agent.py
-        ├── calendar        calendar_agent.py
         ├── briefing        briefing_agent.py
         ├── coding          coding_agent.py + github_agent.py
         ├── memory          memory_agent.py
         ├── personal      ┐
         ├── work          │
-        ├── research      ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
-        ├── weather       │  Tools workspace/web/weather/news/tasks, Denk-Schleife,
-        ├── news          │  History, MemoryAgent, Write-Confirm
+        ├── research      │
+        ├── mail          ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
+        ├── calendar      │  Tools workspace/web/weather/news/tasks/mail/calendar,
+        ├── weather       │  Denk-Schleife, History, MemoryAgent, Write-Confirm
+        ├── news          │
         ├── tasks         │
         └── reminder_write┘
 
@@ -43,10 +43,8 @@ APScheduler (SQLite Jobstore, restart-safe):
 agents/
   main.py               FastAPI-App, Routen, startup/shutdown
   dispatch.py           Telegram-Dispatch: _process_text-Orchestrator + handle_message/voice/start
-  app_state.py          Geteilter State (Pending-Ops, Such-Dicts, lazy Agenten) + TTL-Helper
+  app_state.py          Geteilter State (Pending-Agenten-Aktionen, lazy Agenten) + TTL-Helper
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
-  mail_handler.py       Mail-Intent-Handler (lesen/suchen/schreiben)
-  calendar_handler.py   Kalender-Intent-Handler (lesen/anlegen/ändern/absagen)
   intent_handlers.py    Schlanke Intent-Handler (coding/briefing/memory)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
@@ -190,10 +188,7 @@ MUSS vor Implementierungsarbeit gelesen werden: `DEVELOPMENT.md`.
 ### Pending-State in `app_state.py`
 
 ```python
-_pending_mail_ops: dict[int, dict]       # Mail-Write-Op wartet auf Confirm
-_pending_calendar_ops: dict[int, dict]   # Kalender-Aktion wartet auf Confirm
-_last_mail_search: dict[int, dict]       # Multi-Treffer-Auswahl (TTL: 3 Min)
-_last_calendar_search: dict[int, dict]   # Termin-Multi-Treffer-Auswahl (TTL: 3 Min)
+pending_agent_actions: dict[int, dict]   # Vorgemerkte Agenten-Schreibaktionen (Write-Confirm)
 _recent_conv: dict[int, list]            # Letzte Konversations-Paare für Router-Kontext
 ```
 
@@ -201,13 +196,10 @@ _recent_conv: dict[int, list]            # Letzte Konversations-Paare für Route
 
 | Callback-Data | Aktion |
 |---|---|
-| `mail:send` / `mail:cancel` | Compose-Entwurf absenden / verwerfen |
-| `mail:action:confirm` / `mail:action:cancel` | Pending Write-Op ausführen / verwerfen |
-| `mail:select:{n}` | Mail n aus Multi-Treffer → Confirm |
-| `cal:action:confirm` / `cal:action:cancel` | Kalender-Aktion ausführen / verwerfen |
-| `cal:select:{n}` | Termin n aus Multi-Treffer → Confirm |
-| `agent:confirm:{id}` | handle_callback | Vorgemerkte Agenten-Schreibaktionen ausführen |
-| `agent:cancel:{id}` | handle_callback | Vorgemerkte Agenten-Schreibaktionen verwerfen |
+| `push:{project}` | Git-Push für ein Projekt auslösen |
+| `dismiss` | Keyboard entfernen ohne Aktion |
+| `agent:confirm:{id}` | Vorgemerkte Agenten-Schreibaktionen ausführen |
+| `agent:cancel:{id}` | Vorgemerkte Agenten-Schreibaktionen verwerfen |
 
 ### MS Graph OAuth
 
@@ -223,14 +215,14 @@ Nach Scope-Änderung muss Re-Auth durchgeführt werden.
 4. `tests/test_<name>.py` — Unit-Tests (mocked)
 5. `CLAUDE.md` — Agenten-Tabelle aktualisieren
 
-### Agentischer Pfad — Phase 1
+### Agentischer Pfad — Phase 2
 
-`personal`/`work`/`research` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
+`personal`/`work`/`research`/`mail`/`calendar` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
 
 - **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
 - **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
 - **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
-- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks` + die eingebauten `WebSearch`/`WebFetch`.
+- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks`, `mail`, `calendar` + die eingebauten `WebSearch`/`WebFetch`.
 - Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
 **Write-Confirm:** Schreib-Aktionen von Tools (ab `tasks`) führen nicht direkt
@@ -247,8 +239,8 @@ verwerfen; die ID verhindert, dass ein veralteter Button fremde Aktionen ausfüh
 - VPS-Code unter `/opt/herrlich-ai-platform/`; rsync → `/opt/jarvis/`; Secrets aus `/var/lib/jarvis/.env`
 - MS Graph `/archive` existiert nicht für persönliche Accounts → `move` mit `destinationId: "archive"`
 - Router-Kontext: interleaved User+Jarvis-Paare aus `_recent_conv`
-- Conversation History nur für personal/work/research
-- Kalender-Schreibaktionen zeigen Confirm-Dialog (Callbacks `cal:action:*`)
+- Conversation History nur für personal/work/research/mail/calendar
+- Mail- und Kalender-Schreibaktionen laufen durch Write-Confirm (agent-Tools)
 - polkit-Regel auf VPS nötig für Webhook-Restart: fehlt sie → rsync läuft, Neustart scheitert still
 
 ---
