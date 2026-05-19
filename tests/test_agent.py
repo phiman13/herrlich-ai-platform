@@ -10,18 +10,6 @@ import agent
 import app_state
 
 
-def test_agent_enabled_default_off(monkeypatch):
-    monkeypatch.delenv("JARVIS_AGENT_ENABLED", raising=False)
-    assert agent.agent_enabled() is False
-
-
-def test_agent_enabled_on(monkeypatch):
-    monkeypatch.setenv("JARVIS_AGENT_ENABLED", "1")
-    assert agent.agent_enabled() is True
-    monkeypatch.setenv("JARVIS_AGENT_ENABLED", "true")
-    assert agent.agent_enabled() is True
-
-
 def test_system_prompt_includes_memory_context():
     prompt = agent.build_system_prompt("=== Erinnerungen ===\nPhilipp mag Tee\n\n")
     assert "Philipp mag Tee" in prompt
@@ -64,12 +52,6 @@ def test_build_user_prompt_with_history():
 
 def test_build_user_prompt_no_history():
     assert agent.build_user_prompt([], "nur die Frage") == "nur die Frage"
-
-
-def test_agent_enabled_all_truthy_values(monkeypatch):
-    for val in ("1", "true", "yes", "on", "True", "YES", " 1 "):
-        monkeypatch.setenv("JARVIS_AGENT_ENABLED", val)
-        assert agent.agent_enabled() is True, f"Expected True for {val!r}"
 
 
 def test_get_agent_lock_returns_same_lock_per_chat():

@@ -15,8 +15,7 @@ from router import route_with_llm
 from voice_agent import transcribe
 from mail_handler import handle_mail_intent
 from calendar_handler import handle_calendar_intent
-from chat_handler import handle_research, handle_work, handle_personal
-from agent import run_agent, agent_enabled
+from agent import run_agent
 from intent_handlers import (
     handle_coding,
     handle_reminder_write,
@@ -32,9 +31,8 @@ logger = logging.getLogger("jarvis.dispatch")
 
 _MEMORY_INTENTS = {"personal", "work", "research"}
 _HISTORY_INTENTS = {"personal", "work", "research"}
-# Intents, die der agentische Pfad übernimmt (wenn JARVIS_AGENT_ENABLED).
-# Bewusst eine eigene Menge — deckt sich aktuell mit _MEMORY_INTENTS /
-# _HISTORY_INTENTS, kann in Phase 2 aber divergieren.
+# Intents, die der agentische Pfad (run_agent) übernimmt. Wächst in Phase 2 mit
+# jeder Handler→Tool-Konvertierung; deckt sich aktuell mit den anderen Mengen.
 _AGENT_INTENTS = {"personal", "work", "research"}
 
 
@@ -93,7 +91,7 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         except Exception as e:
             logger.warning("History load failed: %s", e)
 
-    if intent in _AGENT_INTENTS and agent_enabled():
+    if intent in _AGENT_INTENTS:
         answer = await run_agent(chat_id, text, history, memory_context)
     elif intent == "calendar":
         await handle_calendar_intent(chat_id, text, params)
@@ -101,15 +99,11 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
     elif intent == "mail":
         await handle_mail_intent(chat_id, text, params)
         return
-    elif intent == "research":
-        answer = await handle_research(chat_id, text, memory_context, history)
     elif intent == "coding":
         await handle_coding(chat_id, text, params, update)
     elif intent == "reminder_write":
         await handle_reminder_write(chat_id, params, update)
         return
-    elif intent == "work":
-        answer = await handle_work(chat_id, text, memory_context, history)
     elif intent == "news":
         await handle_news(chat_id, update)
     elif intent == "tasks":
@@ -122,7 +116,8 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         await handle_memory(chat_id, params, update)
         return
     else:
-        answer = await handle_personal(chat_id, text, memory_context, history)
+        # Unbekannter/nicht zugeordneter Intent → agentischer Fallback.
+        answer = await run_agent(chat_id, text, history, memory_context)
 
     if answer and not answer.startswith("Fehler:"):
         _conv_complete(chat_id, answer[:180])

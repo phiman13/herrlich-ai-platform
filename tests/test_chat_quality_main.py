@@ -2,7 +2,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import dispatch as main_module
-import chat_handler
 import app_state
 
 
@@ -38,65 +37,6 @@ def test_keep_typing_stops_on_event():
     assert count >= 1
 
 
-def test_personal_intent_uses_sonnet():
-    with patch(
-        "dispatch.route_with_llm",
-        return_value={
-            "intent": "personal",
-            "confidence": 9,
-            "params": {},
-            "reasoning": "test",
-        },
-    ):
-        with patch(
-            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
-        ) as mock_ask:
-            with patch("app_state.send_typing", new_callable=AsyncMock):
-                update = MagicMock()
-                update.update_id = 77771
-                update.message.text = "Hallo"
-                update.message.chat_id = 123
-                update.message.reply_text = AsyncMock()
-                asyncio.run(main_module.handle_message(update, None))
-
-    call_kwargs = mock_ask.call_args.kwargs
-    assert call_kwargs.get("model") == "claude-sonnet-4-6"
-
-
-def test_ask_claude_injects_history():
-    history = [
-        {"role": "user", "content": "Was ist Python?"},
-        {"role": "assistant", "content": "Python ist eine Programmiersprache."},
-    ]
-
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="Antwort")]
-
-    with (
-        patch("chat_handler.claude") as mock_claude,
-        patch("chat_handler.Bot") as mock_bot_cls,
-    ):
-        mock_bot_cls.return_value.send_message = AsyncMock()
-        mock_claude.messages.create.return_value = mock_response
-        asyncio.run(
-            chat_handler.ask_claude(
-                chat_id=123,
-                system="system",
-                user="Wie alt ist es?",
-                history=history,
-            )
-        )
-
-    call_kwargs = mock_claude.messages.create.call_args.kwargs
-    messages = call_kwargs["messages"]
-    assert messages[0] == {"role": "user", "content": "Was ist Python?"}
-    assert messages[1] == {
-        "role": "assistant",
-        "content": "Python ist eine Programmiersprache.",
-    }
-    assert messages[2] == {"role": "user", "content": "Wie alt ist es?"}
-
-
 def test_history_saved_after_personal_intent():
     mock_db = MagicMock()
     mock_db.get_recent = AsyncMock(return_value=[])
@@ -113,7 +53,7 @@ def test_history_saved_after_personal_intent():
         },
     ):
         with patch(
-            "chat_handler.ask_claude",
+            "dispatch.run_agent",
             new_callable=AsyncMock,
             return_value="Antwort auf Hallo",
         ):
@@ -184,8 +124,8 @@ def test_profile_content_injected_for_personal_intent():
         },
     ):
         with patch(
-            "chat_handler.ask_claude", new_callable=AsyncMock, return_value="ok"
-        ) as mock_ask:
+            "dispatch.run_agent", new_callable=AsyncMock, return_value="ok"
+        ) as mock_run:
             with patch("app_state.send_typing", new_callable=AsyncMock):
                 update = MagicMock()
                 update.update_id = 88881
@@ -195,5 +135,6 @@ def test_profile_content_injected_for_personal_intent():
                 asyncio.run(main_module.handle_message(update, None))
 
     app_state.profile_agent = None
-    system_arg = mock_ask.call_args.kwargs.get("system", "")
-    assert "Strategischer Berater" in system_arg
+    # run_agent(chat_id, text, history, memory_context) — memory_context = args[3]
+    memory_context_arg = mock_run.call_args.args[3]
+    assert "Strategischer Berater" in memory_context_arg

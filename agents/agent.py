@@ -1,8 +1,8 @@
-"""Agentische Konversations-Runtime — Phase 1 des agentischen Jarvis.
+"""Agentische Konversations-Runtime des agentischen Jarvis.
 
-Ein zustandsloser SDK-Lauf pro Telegram-Nachricht. Der Router bleibt vorgelagert;
-diese Runtime übernimmt personal/work/research, wenn JARVIS_AGENT_ENABLED gesetzt
-ist.
+Ein zustandsloser SDK-Lauf pro Telegram-Nachricht. Der Router bleibt in Phase 2
+vorgelagert; diese Runtime übernimmt die agentischen Intents (_AGENT_INTENTS in
+dispatch.py).
 """
 
 import asyncio
@@ -27,16 +27,6 @@ logger = logging.getLogger("jarvis.agent")
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 _MAX_TURNS = 12
 _HISTORY_TURNS = 15
-
-
-def agent_enabled() -> bool:
-    """True, wenn der agentische Pfad per Feature-Flag aktiv ist."""
-    return os.environ.get("JARVIS_AGENT_ENABLED", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
 
 
 def build_system_prompt(memory_context: str) -> str:
