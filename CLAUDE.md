@@ -230,7 +230,7 @@ Nach Scope-Änderung muss Re-Auth durchgeführt werden.
 - **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
 - **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
 - **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
-- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks` + die eingebauten `WebSearch`/`WebFetch`. Built-in
+- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks` + die eingebauten `WebSearch`/`WebFetch`.
 - Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
 **Write-Confirm:** Schreib-Aktionen von Tools (ab `tasks`) führen nicht direkt
