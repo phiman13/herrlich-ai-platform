@@ -37,10 +37,24 @@ async def test_add_action_stages_not_executes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_add_action_requires_list_and_title():
+async def test_add_action_uses_default_list_when_no_list_name():
+    """Kein list_name → Fallback auf REMINDER_TODO_LIST-Default ('Tasks')."""
     app_state.pending_agent_actions.clear()
     tool = tasks_tool_mod.make_tasks_tool(7)
     result = await tool.handler({"action": "add", "title": "Milch"})
+    assert "vorgemerkt" in result["content"][0]["text"].lower()
+    entry = app_state.pending_agent_actions.get(7)
+    assert entry is not None
+    assert entry["actions"][0]["params"]["list_name"] == "Tasks"
+    app_state.pending_agent_actions.clear()
+
+
+@pytest.mark.asyncio
+async def test_add_action_requires_title():
+    """Nur title ist für add wirklich Pflicht — list_name hat einen Default."""
+    app_state.pending_agent_actions.clear()
+    tool = tasks_tool_mod.make_tasks_tool(7)
+    result = await tool.handler({"action": "add"})
     assert result["content"][0]["text"].startswith("FEHLER")
     assert app_state.peek_pending(7) is None
 

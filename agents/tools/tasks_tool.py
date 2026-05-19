@@ -43,7 +43,7 @@ def _label(action: str, params: dict) -> str:
 def _missing_fields(action: str, params: dict) -> str:
     """Gibt fehlende Pflichtfelder als Text zurück, sonst ''."""
     required = {
-        "add": ("list_name", "title"),
+        "add": ("title",),  # list_name hat einen Env-Var-Default
         "complete": ("list_name", "title"),
         "create_list": ("name",),
         "delete_list": ("list_name",),
@@ -60,8 +60,9 @@ def make_tasks_tool(chat_id: int):
         "MS-To-Do-Listen lesen und ändern. "
         "action='list': offene Tasks einer Liste, oder alle Listen wenn list_name "
         "leer (read). "
-        "action='add': Task/Erinnerung anlegen (list_name, title; optional due_date "
-        "'YYYY-MM-DD', due_time 'HH:MM'). "
+        "action='add': Task/Erinnerung anlegen (title; list_name optional — ohne "
+        "Angabe landet der Task in 'Tasks'; optional due_date 'YYYY-MM-DD', "
+        "due_time 'HH:MM'). "
         "action='complete': Task abhaken (list_name, title — title muss EXAKT dem "
         "Task-Titel entsprechen; bei Unsicherheit vorher action='list' aufrufen). "
         "action='create_list' (name) / 'delete_list' (list_name) / "
@@ -90,8 +91,12 @@ def make_tasks_tool(chat_id: int):
                 "complete, create_list, delete_list, rename_list."
             )
         # Schreib-Aktion → Pflichtfelder prüfen, dann vormerken.
+        import os
+
+        default_list = os.environ.get("REMINDER_TODO_LIST", "Tasks")
         params = {
-            "list_name": (args.get("list_name") or "").strip(),
+            "list_name": (args.get("list_name") or "").strip()
+            or (default_list if action == "add" else ""),
             "title": (args.get("title") or "").strip(),
             "name": (args.get("name") or "").strip(),
             "new_name": (args.get("new_name") or "").strip(),
