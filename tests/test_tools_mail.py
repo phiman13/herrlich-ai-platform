@@ -327,3 +327,37 @@ async def test_execute_write_delete(monkeypatch):
 async def test_execute_write_unknown_action():
     msg = await mail_tool_mod.execute_write("frobnicate", {})
     assert "Unbekannte" in msg
+
+
+@pytest.mark.asyncio
+async def test_list_unread_folder_not_found(monkeypatch):
+    monkeypatch.setattr(
+        mail_tool_mod,
+        "MailAgent",
+        lambda: _MockAgent(find_folder_by_name=lambda n: None),
+    )
+    tool = mail_tool_mod.make_mail_tool(7)
+    result = await tool.handler(
+        {"action": "list_unread", "folder_name": "Nichtvorhanden"}
+    )
+    text = result["content"][0]["text"]
+    assert "FEHLER" in text
+    assert "Nichtvorhanden" in text
+
+
+@pytest.mark.asyncio
+async def test_execute_write_forward_no_valid_email(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        mail_tool_mod,
+        "MailAgent",
+        lambda: _MockAgent(
+            forward=lambda mid, tos, c: calls.append((mid, tos, c)) or True
+        ),
+    )
+    msg = await mail_tool_mod.execute_write(
+        "forward", {"mail_id": "m1", "to_email": "kein-at-zeichen", "comment": ""}
+    )
+    assert calls == []
+    assert "❌" in msg
+    assert "kein-at-zeichen" in msg

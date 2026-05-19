@@ -138,8 +138,9 @@ def make_mail_tool(chat_id: int):
             agent = MailAgent()
             if folder_name:
                 folder = await asyncio.to_thread(agent.find_folder_by_name, folder_name)
-                folder_id = folder.id if folder else None
-                mails = await asyncio.to_thread(agent.get_unread, count, folder_id)
+                if folder is None:
+                    return _text(f"FEHLER: Ordner '{folder_name}' nicht gefunden.")
+                mails = await asyncio.to_thread(agent.get_unread, count, folder.id)
             else:
                 mails = await asyncio.to_thread(agent.get_inbox_unread, count)
             return _text(_format_mails(mails))
@@ -223,6 +224,8 @@ async def execute_write(action: str, params: dict) -> str:
 
     if action == "forward":
         to_emails = [e.strip() for e in params["to_email"].split(",") if "@" in e]
+        if not to_emails:
+            return f"❌ Keine gültige E-Mail-Adresse in '{params['to_email']}'."
         comment = params.get("comment", "")
         ok = await asyncio.to_thread(
             agent.forward, params["mail_id"], to_emails, comment
