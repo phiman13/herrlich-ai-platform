@@ -27,6 +27,7 @@ agentisch, der Router funktionslos umgangen. Phase 3 löscht den Router dann sam
 | **Ansatz** | Fähigkeits-Tools, Agent orchestriert | Die Orchestrierungs-Logik der Handler (Suche→Disambiguierung→Confirm) entfällt — der Agent macht das per mehreren Tool-Calls. Genau die Design-Absicht. |
 | **`memory`-Intent** | Eigenes `memory`-Tool ergänzen (list/delete) | Das Design ließ den expliziten `memory`-Intent ohne Zuhause. Mit eigenem Tool kann Phase 3 den Router wirklich komplett entfernen. |
 | **read/write-Gate** | Tool klassifiziert selbst; Permission-Hook bleibt reine Allowlist | Sauberer als „Permission-Hook prüft die Aktion" — der echte Gate ist Vormerken + Lauf-Ende-Confirm. |
+| **`JARVIS_AGENT_ENABLED`** | Flag in Phase 2 abgeschafft (Plan 1) | „Alten Handler löschen" und „Flag-aus-Fallback behalten" schließen sich aus. Der Agent-Pfad wird dauerhaft für alle Intents; Rollback = git revert + Redeploy. `chat_handler.py` (Phase-1-Konversations-Handler) entfällt damit. |
 
 ## Bewusst benannte Kosten
 
@@ -147,6 +148,14 @@ Phase 3 löscht `router.py` + lässt `_process_text` kollabieren.
 
 Der `confidence < 5`-Fallback bleibt in Phase 2 (der Router gatet noch
 nicht-konvertierte Intents), fällt mit dem Router in Phase 3.
+
+**Phase-1-Scaffolding-Abbau (Plan 1, vor der ersten Konvertierung):** Das
+Feature-Flag `JARVIS_AGENT_ENABLED` wird abgeschafft — der Agent-Pfad ist
+dauerhaft für `personal`/`work`/`research`. Das macht `chat_handler.py` (die
+Phase-1-Single-shot-Handler `handle_personal/work/research` + `ask_claude`) tot;
+es wird mitgelöscht. Rollback ab Phase 2 = git revert + Redeploy, nicht mehr der
+Env-Schalter. Dieser Abbau ist die Voraussetzung dafür, dass konvertierte Handler
+pro Mini-Zyklus wirklich gelöscht werden können.
 
 **Handler-/Datei-Aufräumen pro Zyklus:** `intent_handlers.py` schrumpft (weather,
 news, tasks, briefing, memory, coding-Handler entfallen); `mail_handler.py` /
