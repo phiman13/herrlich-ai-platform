@@ -104,6 +104,7 @@ async def run_agent(
         stop = asyncio.Event()
         typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
         final_text = ""
+        run_failed = False
         try:
             opts_kwargs = dict(
                 model=os.environ.get("JARVIS_AGENT_MODEL", _DEFAULT_MODEL),
@@ -148,6 +149,7 @@ async def run_agent(
         except Exception as e:
             logger.exception("Agent-Lauf fehlgeschlagen")
             final_text = f"Fehler: {e}"
+            run_failed = True
         finally:
             stop.set()
             await typing_task
@@ -155,7 +157,7 @@ async def run_agent(
         if not final_text:
             final_text = "Keine Antwort erhalten."
         # Lauf mit Fehler → keine vorgemerkten Aktionen bestätigen lassen.
-        if final_text.startswith("Fehler:"):
+        if run_failed:
             app_state.clear_pending_actions(chat_id)
             pending = None
         else:
@@ -187,7 +189,7 @@ async def run_agent(
         else:
             await bot.send_message(chat_id=chat_id, text=final_text)
 
-    if app_state.memory_agent and not final_text.startswith("Fehler:"):
+    if app_state.memory_agent and not run_failed:
         asyncio.create_task(
             app_state.memory_agent.extract(user_text, final_text, source="agent")
         )

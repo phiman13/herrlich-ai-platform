@@ -283,7 +283,7 @@ async def test_run_agent_error_discards_pending():
             patch("agent._keep_typing", new=AsyncMock()),
         ):
             await agent.run_agent(562, "Leg X an", [], "")
+        assert mock_bot.send_message.call_args.kwargs.get("reply_markup") is None
+        assert app_state.peek_pending(562) is None
     finally:
         app_state.pending_agent_actions.clear()
-    assert mock_bot.send_message.call_args.kwargs.get("reply_markup") is None
-    assert app_state.peek_pending(562) is None
