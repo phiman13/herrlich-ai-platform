@@ -1,4 +1,4 @@
-"""Lean intent handlers — coding, tasks, news, weather, briefing, reminders, memory."""
+"""Lean intent handlers — coding, briefing, memory."""
 
 import logging
 import os
