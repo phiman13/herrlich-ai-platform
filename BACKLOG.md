@@ -8,27 +8,29 @@ Plan in `docs/plans/`. Beschreibt nie den Ist-Zustand — das tut `CLAUDE.md`.
 fertig → `CLAUDE.md` aktualisiert, Eintrag raus, Plan nach `docs/plans/done/`.
 Doku-Modell: `docs/README.md`.
 
-Letzter Stand: 18.05.2026
+Letzter Stand: 19.05.2026
 
 ---
 
 ## P1 — Nächster großer Schritt
 
 - [ ] **Agentischer Jarvis — Phase 2 & 3**
-      Phase 1 ist **live** (seit 18.05.2026, `JARVIS_AGENT_ENABLED=1`):
-      `personal`/`work`/`research` laufen durch einen echten Agenten (Claude Agent
-      SDK, Werkzeuge `workspace` + `web`); der Router bleibt vorgelagert.
-      Ist-Zustand siehe `CLAUDE.md` → „Agentischer Pfad".
+      Phase 2 („Handler → Tools") läuft, in 5 Umsetzungspläne gesliced.
+      **Design-SSoT (alle Phasen):** `docs/plans/2026-05-19-agentischer-jarvis-phase2-design.md`.
+      **Stand:**
+      - Plan 1 (Fundament: Flag weg, `chat_handler.py` weg, `agents/tools/`-Paket) —
+        **erledigt + live (19.05.2026).**
+      - Plan 2 (Read-only-Pilot: `weather` + `news` als Tools) — **erledigt + live.**
+      - Plan 3 (Write-Mechanik + `tasks`/`reminder_write`) — **geschrieben + committed,
+        bereit zur Ausführung** (`docs/plans/2026-05-19-agentischer-jarvis-phase2-plan3-write-mechanik-tasks.md`,
+        subagent-getrieben).
       **Offen:**
-      - Phase 2: die strukturierten Handler (Reihenfolge nach Risiko: `weather`/`news`
-        → `tasks`/`briefing` → `mail`/`calendar` → `coding`) einzeln zu Agenten-Tools
-        umbauen, inkl. Write-Confirm-Fluss. Eigener Plan nötig.
-      - Phase 3: `router.py` entfällt, der Agent ist alleinige Fronttür — beseitigt
-        den Router-Fehlklassifikations-Fehlmodus.
+      - Plan 3 ausführen.
+      - Plan 4 (`mail` + `calendar`) und Plan 5 (`coding`) — noch zu schreiben.
+      - Phase 3: `router.py` entfällt, der Agent ist alleinige Fronttür.
       - Follow-up Phase-1-Review: freundlichere Fehlermeldung, falls die `claude`-CLI
         auf dem VPS fehlt/nicht authentifiziert ist.
-      Design (SSoT, alle Phasen): `docs/plans/2026-05-18-agentischer-jarvis-design.md`.
-      Phase-1-Plan archiviert: `docs/plans/done/2026-05-18-agentischer-jarvis-phase1-plan.md`.
+      Phase-1-Plan + Phase-2-Pläne 1/2 archivieren erst nach Phase-Abschluss.
 
 ---
 
