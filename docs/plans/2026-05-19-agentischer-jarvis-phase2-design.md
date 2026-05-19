@@ -133,10 +133,13 @@ Jeder Zyklus ist git-revertierbar.
 | 7 | `calendar` | schwere Writes | Wie `mail` |
 | 8 | `coding` | Sonderfall | Siehe Sektion 5 |
 
-**Set-Konvergenz:** Pro Zyklus wandert der Intent in `_AGENT_INTENTS`. Da
-agentische Intents History + Memory brauchen, wandert er zugleich in
-`_MEMORY_INTENTS` und `_HISTORY_INTENTS` — die drei Sets konvergieren. Nebeneffekt:
-das liefert den Backlog-P2-Punkt „Gesprächsverlauf für alle Intents" gratis mit.
+**Set-Verdrahtung:** Pro Zyklus wandert der Intent in `_AGENT_INTENTS` (Routing)
+und `_HISTORY_INTENTS` (Folgefragen-Kontext, z. B. „und morgen?"). `_MEMORY_INTENTS`
+— Profil + semantisches Memory-Retrieval (ein Embedding-Lauf) — bleibt den
+Gesprächs-Intents `personal`/`work`/`research` vorbehalten: für triviale Intents
+wie `weather`/`news` lohnt der Retrieval nicht und widerspräche dem „trivial-schnell"-
+Ziel. Nebeneffekt von `_HISTORY_INTENTS`: das liefert den Backlog-P2-Punkt
+„Gesprächsverlauf für alle Intents" gratis mit.
 
 **Router in Phase 2:** bleibt physisch da, klassifiziert weiter. Seine
 dynamische Kontext-Erzeugung (Kalender-Namen, To-Do-Listen, Mail-Ordner im

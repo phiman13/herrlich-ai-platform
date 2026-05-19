@@ -189,13 +189,15 @@ Expected: PASS.
 
 In `agents/dispatch.py`:
 
-(a) Ergänze `"weather"` in allen drei Intent-Mengen:
+(a) Ergänze `"weather"` in `_HISTORY_INTENTS` und `_AGENT_INTENTS` — **nicht** in
+`_MEMORY_INTENTS` (Profil + Embedding-Retrieval lohnt für triviale Intents nicht).
+Passe die Kommentare über den Mengen an, sodass sie den Unterschied erklären.
+Ergebnis:
 ```python
-_MEMORY_INTENTS = {"personal", "work", "research", "weather"}
+# Profil + semantische Erinnerungen — nur für die Gesprächs-Intents.
+_MEMORY_INTENTS = {"personal", "work", "research"}
+# Gesprächsverlauf — auch für agentische Intents (Folgefragen „und morgen?").
 _HISTORY_INTENTS = {"personal", "work", "research", "weather"}
-```
-und
-```python
 _AGENT_INTENTS = {"personal", "work", "research", "weather"}
 ```
 
@@ -439,13 +441,11 @@ Expected: PASS.
 
 In `agents/dispatch.py`:
 
-(a) Ergänze `"news"` in allen drei Intent-Mengen:
+(a) Ergänze `"news"` in `_HISTORY_INTENTS` und `_AGENT_INTENTS` — **nicht** in
+`_MEMORY_INTENTS`. Ergebnis:
 ```python
-_MEMORY_INTENTS = {"personal", "work", "research", "weather", "news"}
+_MEMORY_INTENTS = {"personal", "work", "research"}
 _HISTORY_INTENTS = {"personal", "work", "research", "weather", "news"}
-```
-und
-```python
 _AGENT_INTENTS = {"personal", "work", "research", "weather", "news"}
 ```
 
@@ -591,8 +591,9 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Self-Review-Notiz
 
 Plan 2 deckt aus dem Design die Konvertierungs-Sequenz #1 (`weather`) und #2 (`news`)
-ab — beide read-only, kein Write-Confirm nötig. Die Set-Konvergenz (Intent wandert
-in alle drei `_*_INTENTS`-Mengen) ist umgesetzt; die drei Mengen bleiben bewusst
-getrennt (eigene Gates), kollabieren erst in Phase 3. **Nicht** in Plan 2:
+ab — beide read-only, kein Write-Confirm nötig. Konvertierte Intents wandern in
+`_AGENT_INTENTS` (Routing) und `_HISTORY_INTENTS` (Folgefragen-Kontext), aber nicht
+in `_MEMORY_INTENTS` — Profil + semantisches Memory-Retrieval bleiben den
+Gesprächs-Intents vorbehalten, da der Embedding-Lauf für triviale Intents nicht lohnt. **Nicht** in Plan 2:
 Write-/Confirm-Mechanik, `chat_id`-Scoping von `build_mcp_server` (beides Plan 3
 mit dem ersten Write-Tool `tasks`), die übrigen Handler.
