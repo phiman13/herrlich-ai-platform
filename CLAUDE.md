@@ -22,16 +22,16 @@ agents/router.py            Claude Haiku — klassifiziert Intent
         │
         ├── mail            mail_agent.py
         ├── calendar        calendar_agent.py
-        ├── tasks           tasks_agent.py
-        ├── reminder_write  tasks_agent.py (add_task mit due_date/due_time)
         ├── briefing        briefing_agent.py
         ├── coding          coding_agent.py + github_agent.py
         ├── memory          memory_agent.py
-        ├── personal ┐
-        ├── work     │
-        ├── research ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
-        ├── weather  │  Tools workspace/web/weather/news, Denk-Schleife,
-        └── news     ┘  History, MemoryAgent
+        ├── personal      ┐
+        ├── work          │
+        ├── research      ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
+        ├── weather       │  Tools workspace/web/weather/news/tasks, Denk-Schleife,
+        ├── news          │  History, MemoryAgent, Write-Confirm
+        ├── tasks         │
+        └── reminder_write┘
 
 APScheduler (SQLite Jobstore, restart-safe):
         └── proactive_agent.py
@@ -47,7 +47,7 @@ agents/
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
   mail_handler.py       Mail-Intent-Handler (lesen/suchen/schreiben)
   calendar_handler.py   Kalender-Intent-Handler (lesen/anlegen/ändern/absagen)
-  intent_handlers.py    Schlanke Intent-Handler (coding/tasks/briefing/...)
+  intent_handlers.py    Schlanke Intent-Handler (coding/briefing/memory)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
   router.py             Intent-Routing via Claude Haiku
@@ -206,6 +206,8 @@ _recent_conv: dict[int, list]            # Letzte Konversations-Paare für Route
 | `mail:select:{n}` | Mail n aus Multi-Treffer → Confirm |
 | `cal:action:confirm` / `cal:action:cancel` | Kalender-Aktion ausführen / verwerfen |
 | `cal:select:{n}` | Termin n aus Multi-Treffer → Confirm |
+| `agent:confirm:{id}` | handle_callback | Vorgemerkte Agenten-Schreibaktionen ausführen |
+| `agent:cancel:{id}` | handle_callback | Vorgemerkte Agenten-Schreibaktionen verwerfen |
 
 ### MS Graph OAuth
 
@@ -228,7 +230,14 @@ Nach Scope-Änderung muss Re-Auth durchgeführt werden.
 - **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
 - **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
 - **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
+- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks` + die eingebauten `WebSearch`/`WebFetch`. Built-in
 - Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
+
+**Write-Confirm:** Schreib-Aktionen von Tools (ab `tasks`) führen nicht direkt
+aus — sie werden vorgemerkt (`app_state.pending_agent_actions`, je Lauf ein Set
+mit ID), `run_agent` hängt am Lauf-Ende einen gebündelten InlineKeyboard-Confirm
+an. Die Callbacks `agent:confirm:{id}`/`agent:cancel:{id}` führen aus bzw.
+verwerfen; die ID verhindert, dass ein veralteter Button fremde Aktionen ausführt.
 
 ### Bekannte Eigenheiten & Fallstricke
 
