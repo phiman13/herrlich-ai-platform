@@ -16,22 +16,11 @@ agents/main.py              FastAPI Gateway + APScheduler
         ├── Voice? → voice_agent.py → transkribieren → weiter als Text
         │
         ▼
-agents/router.py            Claude Haiku — klassifiziert Intent
-        │                   Input: aktueller Text + letzte 3 User-Nachrichten
-        │                   Output: {intent, confidence, params, reasoning}
+agents/agent.py run_agent   Claude Agent SDK — alle Nachrichten
+        │                   Tools: workspace/weather/news/tasks/mail/calendar/
+        │                   coding/briefing/memory + WebSearch/WebFetch
+        │                   History, MemoryAgent, Write-Confirm
         │
-        ├── briefing        briefing_agent.py
-        ├── memory          memory_agent.py
-        ├── personal      ┐
-        ├── work          │
-        ├── research      │
-        ├── mail          │
-        ├── calendar      ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
-        ├── weather       │  Tools workspace/web/weather/news/tasks/mail/calendar/coding,
-        ├── news          │  Denk-Schleife, History, MemoryAgent, Write-Confirm
-        ├── tasks         │
-        ├── coding        │
-        └── reminder_write┘
 
 APScheduler (SQLite Jobstore, restart-safe):
         └── proactive_agent.py
@@ -45,10 +34,9 @@ agents/
   dispatch.py           Telegram-Dispatch: _process_text-Orchestrator + handle_message/voice/start
   app_state.py          Geteilter State (Pending-Agenten-Aktionen, lazy Agenten) + TTL-Helper
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
-  intent_handlers.py    Schlanke Intent-Handler (briefing/memory)
+  intent_handlers.py    send_briefing (APScheduler-Proaktiv-Job)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
-  router.py             Intent-Routing via Claude Haiku
   db.py                 SessionDB, MemoryDB, ConversationDB, ProactiveDB (alle SQLite-async)
   microsoft_auth.py     MSAL OAuth-Flow für MS Graph
   mail_agent.py         MS Graph Mail (MailAgent-Klasse)
@@ -207,22 +195,23 @@ _recent_conv: dict[int, list]            # Letzte Konversations-Paare für Route
 **Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
 Nach Scope-Änderung muss Re-Auth durchgeführt werden.
 
-### Neuen Agenten / Intent hinzufügen
+### Neues Tool hinzufügen
 
-1. `agents/<name>_agent.py` — Agenten-Logik
-2. `agents/router.py` — Intent in `_SYSTEM_TEMPLATE` + Whitelist-Liste
-3. `agents/dispatch.py` — `elif intent == "<name>":` in `_process_text()`
-4. `tests/test_<name>.py` — Unit-Tests (mocked)
-5. `CLAUDE.md` — Agenten-Tabelle aktualisieren
+1. `agents/<name>_agent.py` — Agenten-Logik (falls noch nicht vorhanden)
+2. `agents/tools/<name>_tool.py` — Tool-Objekt + `execute_write` (falls Schreib-Aktionen)
+3. `agents/tools/__init__.py` — Tool in `_STATIC_TOOLS` oder `_all_tools()` + `_WRITE_EXECUTORS` eintragen
+4. `agents/agent.py` — `build_system_prompt()` um Tool-Beschreibung ergänzen
+5. `tests/test_<name>.py` — Unit-Tests (mocked)
+6. `CLAUDE.md` — Dokumentation aktualisieren
 
-### Agentischer Pfad — Phase 2
+### Agentischer Pfad (Phasen 1–3 abgeschlossen)
 
-`personal`/`work`/`research`/`mail`/`calendar`/`coding` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
+Alle Nachrichten laufen direkt durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Kein Router mehr vorgelagert.
 
 - **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
 - **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
 - **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
-- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks`, `mail`, `calendar`, `coding` + die eingebauten `WebSearch`/`WebFetch`.
+- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks`, `mail`, `calendar`, `coding`, `briefing`, `memory` + die eingebauten `WebSearch`/`WebFetch`.
 - Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
 **Write-Confirm:** Schreib-Aktionen von Tools (ab `tasks`) führen nicht direkt
@@ -238,8 +227,7 @@ verwerfen; die ID verhindert, dass ein veralteter Button fremde Aktionen ausfüh
 - `.venv` im Projekt-Root; auf VPS: `/opt/jarvis/venv/`
 - VPS-Code unter `/opt/herrlich-ai-platform/`; rsync → `/opt/jarvis/`; Secrets aus `/var/lib/jarvis/.env`
 - MS Graph `/archive` existiert nicht für persönliche Accounts → `move` mit `destinationId: "archive"`
-- Router-Kontext: interleaved User+Jarvis-Paare aus `_recent_conv`
-- Conversation History nur für personal/work/research/mail/calendar
+- Conversation History für alle Nachrichten (kein Intent-Gate mehr)
 - Mail- und Kalender-Schreibaktionen laufen durch Write-Confirm (agent-Tools)
 - polkit-Regel auf VPS nötig für Webhook-Restart: fehlt sie → rsync läuft, Neustart scheitert still
 

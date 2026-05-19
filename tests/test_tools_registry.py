@@ -16,6 +16,8 @@ def test_build_mcp_server_registers_tools():
     assert "mcp__jarvis__mail" in tools._ALLOWED_TOOL_NAMES
     assert "mcp__jarvis__calendar" in tools._ALLOWED_TOOL_NAMES
     assert "mcp__jarvis__coding" in tools._ALLOWED_TOOL_NAMES
+    assert "mcp__jarvis__briefing" in tools._ALLOWED_TOOL_NAMES
+    assert "mcp__jarvis__memory" in tools._ALLOWED_TOOL_NAMES
 
 
 def test_write_executors_include_mail_and_calendar():
@@ -30,6 +32,14 @@ def test_coding_in_allowed_tools():
 
 def test_write_executors_include_coding():
     assert "coding" in tools._WRITE_EXECUTORS
+
+
+def test_memory_in_write_executors():
+    assert "memory" in tools._WRITE_EXECUTORS
+
+
+def test_briefing_not_in_write_executors():
+    assert "briefing" not in tools._WRITE_EXECUTORS
 
 
 @pytest.mark.asyncio

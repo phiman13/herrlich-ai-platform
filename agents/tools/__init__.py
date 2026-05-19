@@ -21,12 +21,19 @@ from . import tasks_tool
 from . import mail_tool
 from . import calendar_tool
 from . import coding_tool
+from . import briefing_tool
+from . import memory_tool
 
 _MCP_SERVER_NAME = "jarvis"
 
 # Read-only Tools sind module-level; chat-skopierte Tools (tasks, mail, calendar)
 # werden pro Lauf gebaut, weil sie chat_id zum Vormerken von Schreibaktionen brauchen.
-_STATIC_TOOLS = [_workspace_capability, _weather_capability, _news_capability]
+_STATIC_TOOLS = [
+    _workspace_capability,
+    _weather_capability,
+    _news_capability,
+    briefing_tool.briefing_tool,
+]
 
 
 def _all_tools(chat_id: int) -> list:
@@ -36,6 +43,7 @@ def _all_tools(chat_id: int) -> list:
         mail_tool.make_mail_tool(chat_id),
         calendar_tool.make_calendar_tool(chat_id),
         coding_tool.make_coding_tool(chat_id),
+        memory_tool.make_memory_tool(chat_id),
     ]
 
 
@@ -56,6 +64,7 @@ _WRITE_EXECUTORS: dict = {
     "mail": mail_tool.execute_write,
     "calendar": calendar_tool.execute_write,
     "coding": coding_tool.execute_write,
+    "memory": memory_tool.execute_write,
 }
 
 

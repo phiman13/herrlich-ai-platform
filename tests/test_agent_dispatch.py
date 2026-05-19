@@ -1,4 +1,4 @@
-"""Tests für die Intent-Verdrahtung in dispatch._process_text."""
+"""Tests für dispatch._process_text — ohne Router, run_agent immer."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,101 +8,20 @@ import app_state
 import dispatch
 
 
-def _routing(intent):
-    return {"intent": intent, "params": {}, "confidence": 8, "reasoning": ""}
-
-
 @pytest.mark.asyncio
-async def test_personal_routed_to_agent():
+async def test_any_message_calls_run_agent():
     app_state.conversation_db = None
     app_state.profile_agent = None
     app_state.memory_agent = None
     update = MagicMock()
-    with (
-        patch(
-            "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("personal"))
-        ),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Agent-Antwort")
-        ) as mock_run,
-    ):
+    with patch("dispatch.run_agent", new=AsyncMock(return_value="Antwort")) as mock_run:
         await dispatch._process_text("Hallo", 123, update)
     mock_run.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_weather_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch(
-            "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("weather"))
-        ),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Wetter-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Wetter morgen?", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_news_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("news"))),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="News-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Was gibt es Neues in AI?", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_tasks_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("tasks"))),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Tasks-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Zeig meine Tasks", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_reminder_write_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new=AsyncMock(return_value=_routing("reminder_write")),
-        ),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Erinnerung-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Erinnere mich an den Anruf", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_weather_does_not_trigger_profile_update():
-    """Triviale Intents (weather/news) lösen kein Profil-Update aus — nur
-    Gesprächs-Intents (_MEMORY_INTENTS) lernen ins Profil."""
+async def test_profile_updated_after_any_message():
+    """Profil-Update läuft jetzt für alle Nachrichten, nicht nur MEMORY_INTENTS."""
     app_state.conversation_db = None
     app_state.memory_agent = None
     mock_profile = MagicMock()
@@ -111,79 +30,15 @@ async def test_weather_does_not_trigger_profile_update():
     app_state.profile_agent = mock_profile
     update = MagicMock()
     try:
-        with (
-            patch(
-                "dispatch.route_with_llm",
-                new=AsyncMock(return_value=_routing("weather")),
-            ),
-            patch("dispatch.run_agent", new=AsyncMock(return_value="Wetter-Antwort")),
-        ):
+        with patch("dispatch.run_agent", new=AsyncMock(return_value="Wetter-Antwort")):
             await dispatch._process_text("Wetter morgen?", 123, update)
     finally:
         app_state.profile_agent = None
-    mock_profile.update.assert_not_called()
+    mock_profile.update.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_mail_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("mail"))),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Mail-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Was Wichtiges im Posteingang?", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_calendar_routed_to_agent():
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch(
-            "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("calendar"))
-        ),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Kalender-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Nächster Termin?", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_coding_routed_to_agent(monkeypatch):
-    """coding-Intent läuft durch run_agent, nicht mehr durch handle_coding."""
-    import dispatch as dispatch_mod
-
-    assert not hasattr(dispatch_mod, "handle_coding")
-
-    app_state.conversation_db = None
-    app_state.profile_agent = None
-    app_state.memory_agent = None
-    update = MagicMock()
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new=AsyncMock(return_value=_routing("coding")),
-        ),
-        patch(
-            "dispatch.run_agent", new=AsyncMock(return_value="Coding-Antwort")
-        ) as mock_run,
-    ):
-        await dispatch._process_text("Backlog von recipe-app?", 123, update)
-    mock_run.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_agent_answer_persisted_to_conversation_db():
+async def test_answer_persisted_to_conversation_db():
     app_state.profile_agent = None
     app_state.memory_agent = None
     mock_conv_db = MagicMock()
@@ -192,16 +47,17 @@ async def test_agent_answer_persisted_to_conversation_db():
     app_state.conversation_db = mock_conv_db
     update = MagicMock()
     try:
-        with (
-            patch(
-                "dispatch.route_with_llm",
-                new=AsyncMock(return_value=_routing("personal")),
-            ),
-            patch("dispatch.run_agent", new=AsyncMock(return_value="Agent-Antwort")),
-        ):
+        with patch("dispatch.run_agent", new=AsyncMock(return_value="Agent-Antwort")):
             await dispatch._process_text("Frage", 123, update)
     finally:
         app_state.conversation_db = None
     assert mock_conv_db.save.await_count == 2
     saved_roles = [call.args[1] for call in mock_conv_db.save.await_args_list]
     assert saved_roles == ["user", "assistant"]
+
+
+@pytest.mark.asyncio
+async def test_no_router_in_dispatch():
+    import dispatch as dispatch_mod
+
+    assert not hasattr(dispatch_mod, "route_with_llm")

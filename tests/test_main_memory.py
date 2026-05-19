@@ -25,72 +25,60 @@ def test_memory_agent_is_none_by_default():
     assert app_state.memory_agent is not None
 
 
-def test_retrieve_called_for_personal_intent(fresh_memory_agent):
-    """retrieve() is called when intent is personal."""
+def test_retrieve_called_for_any_message(fresh_memory_agent):
+    """retrieve() wird für alle Nachrichten aufgerufen — kein Router-Gate mehr."""
     called = []
 
     async def fake_retrieve():
         called.append(True)
         return []
 
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
-        with patch(
-            "dispatch.route_with_llm",
-            return_value={
-                "intent": "personal",
-                "confidence": 8,
-                "params": {},
-                "reasoning": "test",
-            },
-        ):
-            with patch("dispatch.run_agent", new_callable=AsyncMock, return_value="ok"):
-                with patch("app_state.send_typing", new_callable=AsyncMock):
-                    update = MagicMock()
-                    update.update_id = 99991
-                    update.message.text = "Wie geht's dir?"
-                    update.message.chat_id = 123
-                    update.message.reply_text = AsyncMock()
-                    asyncio.run(main_module.handle_message(update, None))
+        with patch("dispatch.run_agent", new_callable=AsyncMock, return_value="ok"):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 99991
+                update.message.text = "Wie geht's dir?"
+                update.message.chat_id = 123
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
 
     assert len(called) == 1
 
 
-def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
-    """retrieve() is NOT called for calendar intent — calendar is not in _MEMORY_INTENTS."""
+def test_retrieve_called_for_calendar_message(fresh_memory_agent):
+    """retrieve() wird jetzt auch für calendar aufgerufen — kein _MEMORY_INTENTS-Gate mehr."""
     called = []
 
     async def fake_retrieve():
         called.append(True)
         return []
 
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+
     with patch.object(fresh_memory_agent, "retrieve", side_effect=fake_retrieve):
         with patch(
-            "dispatch.route_with_llm",
-            return_value={
-                "intent": "calendar",
-                "confidence": 9,
-                "params": {},
-                "reasoning": "test",
-            },
+            "dispatch.run_agent",
+            new_callable=AsyncMock,
+            return_value="Heute hast du 2 Termine.",
         ):
-            with patch(
-                "dispatch.run_agent",
-                new_callable=AsyncMock,
-                return_value="Heute hast du 2 Termine.",
-            ):
-                with patch("app_state.send_typing", new_callable=AsyncMock):
-                    update = MagicMock()
-                    update.update_id = 99992
-                    update.message.text = "Was habe ich heute?"
-                    update.message.chat_id = 123
-                    update.message.reply_text = AsyncMock()
-                    asyncio.run(main_module.handle_message(update, None))
+            with patch("app_state.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 99992
+                update.message.text = "Was habe ich heute?"
+                update.message.chat_id = 123
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
 
-    assert called == []
+    assert len(called) == 1
 
 
-def test_memory_list_intent_handler(fresh_memory_agent):
-    """memory intent with mode=list calls list_memories and replies."""
+def test_memory_context_injected_when_memories_exist(fresh_memory_agent):
+    """Vorhandene Memories werden als Kontext an run_agent weitergegeben."""
     import numpy as np
 
     vec = np.zeros(1536, dtype=np.float32)
@@ -98,54 +86,28 @@ def test_memory_list_intent_handler(fresh_memory_agent):
         fresh_memory_agent.db.save("Philipp mag Tee", vec.tobytes(), "preference", "t")
     )
 
-    with patch(
-        "dispatch.route_with_llm",
-        return_value={
-            "intent": "memory",
-            "confidence": 9,
-            "params": {"mode": "list", "query": None},
-            "reasoning": "test",
-        },
-    ):
-        update = MagicMock()
-        update.update_id = 99993
-        update.message.text = "Was weißt du über mich?"
-        update.message.chat_id = 123
-        update.message.reply_text = AsyncMock()
-        asyncio.run(main_module.handle_message(update, None))
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    captured = {}
 
-    update.message.reply_text.assert_called_once()
-    reply_text = update.message.reply_text.call_args[0][0]
-    assert "Philipp mag Tee" in reply_text
+    async def fake_run_agent(chat_id, text, history, memory_context):
+        captured["memory_context"] = memory_context
+        return "ok"
 
-
-def test_memory_delete_intent_handler(fresh_memory_agent):
-    """memory intent with mode=delete calls delete_memory and replies."""
-    import numpy as np
-
-    vec = np.zeros(1536, dtype=np.float32)
-    vec[0] = 1.0
-    asyncio.run(
-        fresh_memory_agent.db.save("Siemens Pitch", vec.tobytes(), "event", "t")
-    )
-
-    with patch(
-        "dispatch.route_with_llm",
-        return_value={
-            "intent": "memory",
-            "confidence": 9,
-            "params": {"mode": "delete", "query": "Siemens"},
-            "reasoning": "test",
-        },
-    ):
-        with patch("agents.memory_agent._embed", return_value=vec):
+    with patch("dispatch.run_agent", side_effect=fake_run_agent):
+        with patch("app_state.send_typing", new_callable=AsyncMock):
             update = MagicMock()
-            update.update_id = 99994
-            update.message.text = "Vergiss Siemens"
+            update.update_id = 99993
+            update.message.text = "Was weißt du über mich?"
             update.message.chat_id = 123
             update.message.reply_text = AsyncMock()
             asyncio.run(main_module.handle_message(update, None))
 
-    update.message.reply_text.assert_called_once()
-    reply_text = update.message.reply_text.call_args[0][0]
-    assert "gelöscht" in reply_text
+    assert "Philipp mag Tee" in captured.get("memory_context", "")
+
+
+def test_no_memory_intent_handler_in_dispatch():
+    """handle_memory wurde aus dispatch entfernt — Memory läuft als Tool."""
+    import dispatch as dispatch_mod
+
+    assert not hasattr(dispatch_mod, "handle_memory")

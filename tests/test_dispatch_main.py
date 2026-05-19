@@ -9,7 +9,6 @@ import app_state
 
 @pytest.fixture(autouse=True)
 def clear_processed_updates():
-    """Prevent dedup logic from skipping tests that share the same update_id."""
     app_state.processed_updates.clear()
     yield
     app_state.processed_updates.clear()
@@ -24,76 +23,28 @@ def _make_update(text, chat_id=123, update_id=90001):
     return update
 
 
-def _route(intent, params=None):
-    return {"intent": intent, "confidence": 9, "params": params or {}, "reasoning": "t"}
-
-
-def test_mail_intent_dispatches_to_run_agent():
-    """mail-Intent läuft jetzt durch run_agent (nicht mehr handle_mail_intent)."""
-    import dispatch as dispatch_mod
-
-    assert not hasattr(dispatch_mod, "handle_mail_intent")
-    assert not hasattr(dispatch_mod, "handle_calendar_intent")
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route("mail", {"mode": "quick_scan"}),
-        ),
-        patch(
-            "dispatch.run_agent", new_callable=AsyncMock, return_value="Mail-Antwort"
-        ) as mock_agent,
-    ):
-        asyncio.run(
-            main.handle_message(_make_update("Was Wichtiges im Posteingang?"), None)
-        )
+def test_any_message_dispatches_to_run_agent():
+    """Ohne Router läuft jede Nachricht direkt durch run_agent."""
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    with patch(
+        "dispatch.run_agent", new_callable=AsyncMock, return_value="Antwort"
+    ) as mock_agent:
+        asyncio.run(main.handle_message(_make_update("Hallo"), None))
     mock_agent.assert_awaited_once()
 
 
-def test_briefing_intent_calls_build_briefing():
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route("briefing"),
-        ),
-        patch(
-            "intent_handlers.build_briefing",
-            new_callable=AsyncMock,
-            return_value="briefing",
-        ) as mock_b,
-    ):
-        asyncio.run(main.handle_message(_make_update("Mein Briefing bitte"), None))
-    mock_b.assert_awaited_once()
-
-
-def test_coding_intent_dispatches_to_run_agent():
-    """coding-Intent läuft jetzt durch run_agent (nicht mehr handle_coding)."""
+def test_no_router_import():
+    """Router-Import ist weg."""
     import dispatch as dispatch_mod
 
-    assert not hasattr(dispatch_mod, "handle_coding")
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route(
-                "coding",
-                {"mode": "query", "project": "recipe-app", "query_type": "backlog"},
-            ),
-        ),
-        patch(
-            "dispatch.run_agent",
-            new_callable=AsyncMock,
-            return_value="Coding-Antwort",
-        ) as mock_agent,
-    ):
-        asyncio.run(main.handle_message(_make_update("Backlog von recipe-app?"), None))
-    mock_agent.assert_awaited_once()
+    assert not hasattr(dispatch_mod, "route_with_llm")
 
 
-def test_low_confidence_asks_for_clarification():
-    routing = {"intent": "mail", "confidence": 2, "params": {}, "reasoning": "t"}
-    update = _make_update("hm")
-    with patch("dispatch.route_with_llm", new_callable=AsyncMock, return_value=routing):
-        asyncio.run(main.handle_message(update, None))
-    assert "nicht ganz sicher" in update.message.reply_text.call_args[0][0]
+def test_no_direct_handler_imports():
+    """handle_briefing und handle_memory sind nicht mehr in dispatch."""
+    import dispatch as dispatch_mod
+
+    assert not hasattr(dispatch_mod, "handle_briefing")
+    assert not hasattr(dispatch_mod, "handle_memory")
