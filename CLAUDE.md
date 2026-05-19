@@ -217,12 +217,12 @@ Nach Scope-Änderung muss Re-Auth durchgeführt werden.
 
 ### Agentischer Pfad — Phase 2
 
-`personal`/`work`/`research`/`mail`/`calendar` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
+`personal`/`work`/`research`/`mail`/`calendar`/`coding` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
 
 - **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
 - **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
 - **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
-- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks`, `mail`, `calendar` + die eingebauten `WebSearch`/`WebFetch`.
+- **Werkzeuge:** `workspace`, `weather`, `news`, `tasks`, `mail`, `calendar`, `coding` + die eingebauten `WebSearch`/`WebFetch`.
 - Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
 **Write-Confirm:** Schreib-Aktionen von Tools (ab `tasks`) führen nicht direkt
