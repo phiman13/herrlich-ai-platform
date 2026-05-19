@@ -50,7 +50,6 @@ agents/
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
   mail_handler.py       Mail-Intent-Handler (lesen/suchen/schreiben)
   calendar_handler.py   Kalender-Intent-Handler (lesen/anlegen/ändern/absagen)
-  chat_handler.py       LLM-Chat-Handler (personal/work/research) + ask_claude
   intent_handlers.py    Schlanke Intent-Handler (coding/tasks/news/weather/briefing/...)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
@@ -101,7 +100,6 @@ docs/plans/             Aktive Pläne (done/ = Archiv abgeschlossener)
 | `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
 | `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
 | `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
-| `JARVIS_AGENT_ENABLED` | ❌ | Feature-Flag agentischer Pfad — prod: `1` (aktiv seit 18.05.2026); `0` = alter Pfad (Rollback) |
 | `JARVIS_AGENT_MODEL` | ❌ | Modell für den Agenten (Default: `claude-sonnet-4-6`) |
 | `JARVIS_WORKSPACE_DIR` | ❌ | Workspace-Root für den `workspace`-Tool (Default: `~/Code`) |
 | `JARVIS_CLAUDE_CLI_PATH` | ❌ | Expliziter Pfad zur `claude`-CLI, falls nicht auf PATH |
@@ -359,15 +357,16 @@ ssh root@100.115.184.3
 
 `personal`/`work`/`research` laufen durch einen echten Agenten
 (`agents/agent.py`, Claude Agent SDK) statt durch die alten Single-shot-
-`chat_handler`-Funktionen. Aktiv über `JARVIS_AGENT_ENABLED=1`. Der Router bleibt
-in Phase 1 vorgelagert — strukturierte Intents (`mail`, `calendar`, …) laufen
+`chat_handler`-Funktionen. Der Router bleibt
+vorerst vorgelagert — strukturierte Intents (`mail`, `calendar`, …) laufen
 unverändert über ihre Handler. Verklassifiziert der Router eine Frage (z.B. als
 `news`), erreicht sie den Agenten nicht — bekannte Limitierung, behoben in Phase 3.
 
 - `agents/agent.py` — `run_agent()`: ein zustandsloser SDK-Lauf pro Nachricht,
   History als Text eingebettet, Antwort an Telegram. Pro Chat serialisiert.
-- `agents/agent_tools.py` — `workspace`-Tool (Datei lesen/suchen/listen, sandboxed
-  auf `JARVIS_WORKSPACE_DIR`), MCP-Server, `can_use_tool`-Permission-Hook.
+- `agents/tools/` — Tool-Paket: `workspace_tool.py` (`workspace`-Tool: Datei
+  lesen/suchen/listen, sandboxed auf `JARVIS_WORKSPACE_DIR`) + Registry
+  `__init__.py` (MCP-Server-Bau, `can_use_tool`-Permission-Hook).
 - Werkzeuge: `workspace` + die eingebauten `WebSearch`/`WebFetch`. Built-in
   `Bash`/`Edit`/`Read` sind für den Agenten deaktiviert.
 
@@ -383,8 +382,9 @@ Das Agent SDK startet die `claude`-CLI als Subprozess. Aktueller Stand:
 - **CLI:** Claude Code CLI unter `/usr/bin/claude`, `claude-agent-sdk` im venv
   `/opt/jarvis/venv/`.
 
-**Rollback:** `JARVIS_AGENT_ENABLED=0` in `/var/lib/jarvis/.env` + `systemctl restart
-jarvis` → sofort zurück zum alten Pfad, kein Code-Revert nötig.
+**Rollback:** Per `git revert` des betroffenen Commits + Redeploy (GitHub-Webhook
+oder manueller Neustart). Das frühere Feature-Flag `JARVIS_AGENT_ENABLED` ist mit
+Phase 2 entfallen.
 
 Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
 
