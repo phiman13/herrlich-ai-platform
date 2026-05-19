@@ -84,3 +84,20 @@ async def test_agent_cancel_discards():
     await callbacks.handle_callback(update, None)
     assert app_state.peek_pending(42) is None
     assert "Abgebrochen" in q.edit_message_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_agent_confirm_action_raises_shows_error():
+    app_state.pending_agent_actions.clear()
+    app_state.stage_agent_action(42, "tasks", "add", "Task A anlegen", {})
+    pid = app_state.peek_pending(42)["id"]
+    update, q = _query(f"agent:confirm:{pid}")
+
+    async def boom(action):
+        raise RuntimeError("Netzwerkfehler")
+
+    with patch("tools.execute_pending_action", side_effect=boom):
+        await callbacks.handle_callback(update, None)
+    msg = q.edit_message_text.call_args.args[0]
+    assert "❌" in msg
+    assert "Task A anlegen" in msg
