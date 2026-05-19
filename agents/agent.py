@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -97,6 +97,9 @@ async def run_agent(
     Pro Chat serialisiert (asyncio.Lock). Gibt den finalen Antworttext zurück.
     """
     async with app_state.get_agent_lock(chat_id):
+        # Un-bestätigte Vormerkungen eines früheren Laufs verwerfen — ein
+        # Pending-Set gehört immer genau einem Lauf.
+        app_state.clear_pending_actions(chat_id)
         bot = Bot(token=app_state.TELEGRAM_TOKEN)
         stop = asyncio.Event()
         typing_task = asyncio.create_task(_keep_typing(chat_id, stop))
@@ -151,9 +154,38 @@ async def run_agent(
 
         if not final_text:
             final_text = "Keine Antwort erhalten."
+        # Lauf mit Fehler → keine vorgemerkten Aktionen bestätigen lassen.
+        if final_text.startswith("Fehler:"):
+            app_state.clear_pending_actions(chat_id)
+            pending = None
+        else:
+            pending = app_state.peek_pending(chat_id)
         if len(final_text) > 4000:
             final_text = final_text[:4000] + "\n[...]"
-        await bot.send_message(chat_id=chat_id, text=final_text)
+        if pending:
+            staged = "\n".join(
+                f"{i}. {a['label']}" for i, a in enumerate(pending["actions"], 1)
+            )
+            pid = pending["id"]
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "✅ Bestätigen", callback_data=f"agent:confirm:{pid}"
+                        ),
+                        InlineKeyboardButton(
+                            "❌ Abbrechen", callback_data=f"agent:cancel:{pid}"
+                        ),
+                    ]
+                ]
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"{final_text}\n\nVorgemerkt:\n{staged}",
+                reply_markup=keyboard,
+            )
+        else:
+            await bot.send_message(chat_id=chat_id, text=final_text)
 
     if app_state.memory_agent and not final_text.startswith("Fehler:"):
         asyncio.create_task(

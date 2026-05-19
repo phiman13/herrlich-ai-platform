@@ -30,6 +30,22 @@ def build_mcp_server() -> McpSdkServerConfig:
     return create_sdk_mcp_server(name=_MCP_SERVER_NAME, version="1.0.0", tools=_TOOLS)
 
 
+# Executor-Registry — tool-name -> execute_write(action, params) -> str.
+# Wird von den Schreib-Tool-Modulen befüllt (ab Plan 3: tasks).
+_WRITE_EXECUTORS: dict = {}
+
+
+async def execute_pending_action(action: dict) -> str:
+    """Eine vorgemerkte Schreibaktion ausführen — dispatcht ans Tool-Modul.
+
+    action: {"tool", "action", "label", "params"}. Gibt eine Ergebnis-Zeile zurück.
+    """
+    executor = _WRITE_EXECUTORS.get(action["tool"])
+    if executor is None:
+        return f"❌ {action['label']}: kein Executor für Tool '{action['tool']}'."
+    return await executor(action["action"], action["params"])
+
+
 async def permission_hook(tool_name: str, tool_input: dict, context) -> object:
     """can_use_tool-Gate — Allowlist der Jarvis-MCP-Tools.
 

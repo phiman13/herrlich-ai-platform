@@ -190,3 +190,100 @@ async def test_run_agent_forces_subscription_billing():
         await agent.run_agent(558, "Hallo", [], "")
 
     assert captured["options"].env.get("ANTHROPIC_API_KEY") == ""
+
+
+@pytest.mark.asyncio
+async def test_run_agent_appends_confirm_keyboard_when_pending():
+    async def fake_query(*, prompt, options=None, transport=None):
+        # Simuliert ein Tool, das während des Laufs zwei Aktionen vormerkt.
+        app_state.stage_agent_action(560, "tasks", "add", "Task 'Milch' anlegen", {})
+        app_state.stage_agent_action(
+            560, "tasks", "complete", "Task 'Brot' abhaken", {}
+        )
+        yield _fake_result("Ich habe das vorbereitet.")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    app_state.pending_agent_actions.clear()
+    try:
+        with (
+            patch("agent.query", fake_query),
+            patch("agent.Bot", return_value=mock_bot),
+            patch("agent._keep_typing", new=AsyncMock()),
+        ):
+            await agent.run_agent(560, "Leg an", [], "")
+    finally:
+        app_state.pending_agent_actions.clear()
+    kwargs = mock_bot.send_message.call_args.kwargs
+    assert kwargs.get("reply_markup") is not None
+    # gebündelt: beide Aktionen stehen nummeriert in der Nachricht
+    assert "1. Task 'Milch' anlegen" in kwargs["text"]
+    assert "2. Task 'Brot' abhaken" in kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_run_agent_no_keyboard_without_pending():
+    async def fake_query(*, prompt, options=None, transport=None):
+        yield _fake_result("Nur Text.")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    app_state.pending_agent_actions.clear()
+    with (
+        patch("agent.query", fake_query),
+        patch("agent.Bot", return_value=mock_bot),
+        patch("agent._keep_typing", new=AsyncMock()),
+    ):
+        await agent.run_agent(561, "Hallo", [], "")
+    assert mock_bot.send_message.call_args.kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_run_agent_clears_stale_pending_at_start():
+    """Ein neuer Lauf verwirft un-bestätigte Vormerkungen eines früheren Laufs."""
+
+    async def fake_query(*, prompt, options=None, transport=None):
+        yield _fake_result("Antwort ohne neue Vormerkung.")
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    app_state.pending_agent_actions.clear()
+    app_state.stage_agent_action(563, "tasks", "add", "alte Vormerkung", {})
+    try:
+        with (
+            patch("agent.query", fake_query),
+            patch("agent.Bot", return_value=mock_bot),
+            patch("agent._keep_typing", new=AsyncMock()),
+        ):
+            await agent.run_agent(563, "Was anderes", [], "")
+    finally:
+        app_state.pending_agent_actions.clear()
+    # Lauf-Start hat die alte Vormerkung verworfen -> kein Keyboard.
+    assert mock_bot.send_message.call_args.kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_run_agent_error_discards_pending():
+    async def fake_query(*, prompt, options=None, transport=None):
+        app_state.stage_agent_action(562, "tasks", "add", "Task X", {})
+        raise RuntimeError("CLI weg")
+        yield  # pragma: no cover
+
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    app_state.agent_run_locks.clear()
+    app_state.pending_agent_actions.clear()
+    try:
+        with (
+            patch("agent.query", fake_query),
+            patch("agent.Bot", return_value=mock_bot),
+            patch("agent._keep_typing", new=AsyncMock()),
+        ):
+            await agent.run_agent(562, "Leg X an", [], "")
+    finally:
+        app_state.pending_agent_actions.clear()
+    assert mock_bot.send_message.call_args.kwargs.get("reply_markup") is None
+    assert app_state.peek_pending(562) is None

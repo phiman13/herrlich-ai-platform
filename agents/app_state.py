@@ -21,6 +21,12 @@ pending_calendar_ops: dict[int, dict] = {}
 last_mail_search: dict[int, dict] = {}
 last_calendar_search: dict[int, dict] = {}
 
+# Vorgemerkte Agenten-Schreibaktionen, die auf den gebündelten Confirm warten.
+# chat_id -> {"id": int, "actions": list[dict], "staged_at": float}
+# Eine Aktion: {"tool": str, "action": str, "label": str, "params": dict}
+pending_agent_actions: dict[int, dict] = {}
+_pending_seq: int = 0
+
 # Telegram update dedup.
 processed_updates: set = set()
 
@@ -50,6 +56,61 @@ _PENDING_OP_TTL = (
 def _pending_op_expired(op: dict) -> bool:
     """True wenn eine Pending-Op älter als _PENDING_OP_TTL ist."""
     return time.time() - op.get("staged_at", 0) > _PENDING_OP_TTL
+
+
+def stage_agent_action(
+    chat_id: int, tool: str, action: str, label: str, params: dict
+) -> None:
+    """Eine Schreibaktion für den Lauf-Ende-Confirm vormerken.
+
+    Hängt an das Pending-Set des laufenden Laufs an. Existiert noch keins (oder
+    ist es abgelaufen), wird ein frisches mit neuer ID erzeugt. run_agent leert
+    den Store beim Lauf-Start — daher gehört ein Set immer genau einem Lauf.
+    """
+    global _pending_seq
+    entry = pending_agent_actions.get(chat_id)
+    if entry is None or _pending_op_expired(entry):
+        _pending_seq += 1
+        entry = {"id": _pending_seq, "actions": [], "staged_at": time.time()}
+        pending_agent_actions[chat_id] = entry
+    entry["actions"].append(
+        {"tool": tool, "action": action, "label": label, "params": params}
+    )
+
+
+def peek_pending(chat_id: int) -> dict | None:
+    """Das Pending-Set lesen ohne zu entnehmen (für den Lauf-Ende-Confirm).
+
+    Gibt {"id", "actions", "staged_at"} zurück oder None.
+    """
+    entry = pending_agent_actions.get(chat_id)
+    if entry is None or _pending_op_expired(entry):
+        return None
+    return entry
+
+
+def take_pending_actions(chat_id: int, expected_id: int) -> list[dict]:
+    """Aktionen entnehmen — nur wenn die ID zum erwarteten Set passt.
+
+    Schützt davor, dass ein veralteter Confirm-Button die Aktionen eines
+    neueren Laufs ausführt. Bei ID-Mismatch bleibt der (neuere) Eintrag
+    unangetastet; bei Treffer wird er gelöscht und zurückgegeben.
+    """
+    entry = pending_agent_actions.get(chat_id)
+    if entry is None:
+        return []
+    if _pending_op_expired(entry):
+        pending_agent_actions.pop(chat_id, None)
+        return []
+    if entry["id"] != expected_id:
+        return []
+    pending_agent_actions.pop(chat_id, None)
+    return entry["actions"]
+
+
+def clear_pending_actions(chat_id: int) -> None:
+    """Pending-Set verwerfen (run_agent beim Lauf-Start und bei Lauf-Fehler)."""
+    pending_agent_actions.pop(chat_id, None)
 
 
 # ---------------------------------------------------------------------------
