@@ -79,6 +79,12 @@ async def test_execute_write_add_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_write_unknown_action_returns_error():
+    msg = await tasks_tool_mod.execute_write("frobnicate", {})
+    assert "Unbekannte" in msg
+
+
+@pytest.mark.asyncio
 async def test_stage_then_execute_via_registry(monkeypatch):
     """Integration: Tool merkt vor -> execute_pending_action führt aus."""
     import tools

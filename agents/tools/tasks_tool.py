@@ -142,7 +142,7 @@ async def execute_write(action: str, params: dict) -> str:
         return (
             f"✅ '{params['title']}' als erledigt markiert."
             if ok
-            else f"❌ '{params['title']}' nicht gefunden oder schon erledigt."
+            else f"❌ '{params['title']}' in '{params['list_name']}' nicht gefunden oder schon erledigt."
         )
     if action == "create_list":
         ok = await asyncio.to_thread(create_list, params["name"])
