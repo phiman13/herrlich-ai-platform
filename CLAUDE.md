@@ -25,14 +25,14 @@ agents/router.py            Claude Haiku — klassifiziert Intent
         ├── calendar        calendar_agent.py
         ├── tasks           tasks_agent.py
         ├── reminder_write  tasks_agent.py (add_task mit due_date/due_time)
-        ├── weather         weather_agent.py
-        ├── news            news_agent.py
         ├── briefing        briefing_agent.py
         ├── coding          coding_agent.py + github_agent.py
         ├── memory          memory_agent.py
         ├── personal ┐
-        ├── work     ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
-        └── research ┘  Tools workspace/web, Denk-Schleife, History, MemoryAgent
+        ├── work     │
+        ├── research ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
+        ├── weather  │  Tools workspace/web/weather/news, Denk-Schleife,
+        └── news     ┘  History, MemoryAgent
 
 APScheduler (SQLite Jobstore, restart-safe):
         └── proactive_agent.py
@@ -50,7 +50,7 @@ agents/
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
   mail_handler.py       Mail-Intent-Handler (lesen/suchen/schreiben)
   calendar_handler.py   Kalender-Intent-Handler (lesen/anlegen/ändern/absagen)
-  intent_handlers.py    Schlanke Intent-Handler (coding/tasks/news/weather/briefing/...)
+  intent_handlers.py    Schlanke Intent-Handler (coding/tasks/briefing/...)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
   router.py             Intent-Routing via Claude Haiku
@@ -360,14 +360,14 @@ ssh root@100.115.184.3
 `chat_handler`-Funktionen. Der Router bleibt
 vorerst vorgelagert — strukturierte Intents (`mail`, `calendar`, …) laufen
 unverändert über ihre Handler. Verklassifiziert der Router eine Frage (z.B. als
-`news`), erreicht sie den Agenten nicht — bekannte Limitierung, behoben in Phase 3.
+`mail`), erreicht sie den Agenten nicht — bekannte Limitierung, behoben in Phase 3.
 
 - `agents/agent.py` — `run_agent()`: ein zustandsloser SDK-Lauf pro Nachricht,
   History als Text eingebettet, Antwort an Telegram. Pro Chat serialisiert.
 - `agents/tools/` — Tool-Paket: `workspace_tool.py` (`workspace`-Tool: Datei
   lesen/suchen/listen, sandboxed auf `JARVIS_WORKSPACE_DIR`) + Registry
   `__init__.py` (MCP-Server-Bau, `can_use_tool`-Permission-Hook).
-- Werkzeuge: `workspace` + die eingebauten `WebSearch`/`WebFetch`. Built-in
+- Werkzeuge: `workspace`, `weather`, `news` + die eingebauten `WebSearch`/`WebFetch`. Built-in
   `Bash`/`Edit`/`Read` sind für den Agenten deaktiviert.
 
 ### Auth, Billing & Runtime (VPS)
