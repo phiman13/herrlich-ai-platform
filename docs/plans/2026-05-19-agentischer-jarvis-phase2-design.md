@@ -90,25 +90,37 @@ _pending_agent_actions: dict[int, dict]   # chat_id -> {actions: [...], timestam
   an, gibt zurück: *„Vorgemerkt: <label>. Wird nach Philipps Bestätigung ausgeführt
   — du musst nicht warten."* Das Tool klassifiziert read/write selbst (Set von
   Write-Action-Namen pro Modul).
+- **Einheitlich confirmen — Watch-Item:** *Alle* Nicht-Lese-Aktionen confirmen
+  gleich, auch unkritische wie `tasks add` (Erinnerung anlegen). Bewusst: das
+  bewährt die Mechanik sauber und zeigt z.B. das geparste Erinnerungs-Datum *vor*
+  dem Speichern. Preis: ein Tap mehr pro Schreib-Nachricht (durch die Bündelung
+  nicht pro Aktion). Falls der Confirm bei häufigen Trivial-Writes im Alltag
+  nervt, später eine dritte Kategorie „Low-Stakes-Write — direkt ausführen"
+  einführen — nicht spekulativ vorab, erst nach realer Erfahrung.
+- **Set-ID:** Jedes Pending-Set bekommt eine ID; `run_agent` leert den Store beim
+  Lauf-Start, sodass ein Set immer genau einem Lauf gehört. Die ID wandert in den
+  `callback_data` — ein veralteter Confirm-Button (nach einem neueren Lauf) wird
+  am ID-Mismatch erkannt und abgelehnt, statt fremde Aktionen auszuführen.
 - **Lauf-Ende in `run_agent`:**
   - Pending-Actions vorhanden → finaler Agent-Text + nummerierte Liste der
     Aktionen + InlineKeyboard `✅ Bestätigen` / `❌ Abbrechen`
-    (Callback `agent:confirm` / `agent:cancel`).
+    (Callback `agent:confirm:{id}` / `agent:cancel:{id}`).
   - Keine Pending → senden wie heute.
   - Lauf mit Fehler → Pending verwerfen, keinen halbgaren Plan zeigen.
-- **Confirm-Callback** (`callbacks.py`, neu `agent:confirm` / `agent:cancel`):
-  - `agent:confirm` → Pending poppen, TTL prüfen (3 Min), Aktionen iterieren, je
-    via `execute_write` des Tool-Moduls ausführen, Nachricht mit Sammel-Ergebnis
-    editieren. Agent wird **nicht** fortgesetzt (Design: Fortsetzung = v2).
-  - `agent:cancel` → Pending verwerfen, „❌ Abgebrochen.".
+- **Confirm-Callback** (`callbacks.py`, neu `agent:confirm:{id}` / `agent:cancel:{id}`):
+  - `agent:confirm:{id}` → Pending nur poppen, wenn die ID passt (sonst „überholt");
+    TTL prüfen (10 Min), Aktionen iterieren, je via `execute_write` des Tool-Moduls
+    ausführen, Nachricht mit Sammel-Ergebnis editieren. Agent wird **nicht**
+    fortgesetzt (Design: Fortsetzung = v2).
+  - `agent:cancel:{id}` → Pending verwerfen (ID-geprüft), „❌ Abgebrochen.".
 
 **Permission-Hook:** bleibt eine reine Allowlist der 9 Tool-Namen (verweigert
 Unbekanntes wie `Bash`). Er prüft *nicht* die Aktion — das Tool klassifiziert
 read/write selbst.
 
 **Restart-Verhalten:** Der Pending-Store ist in-memory (wie die heutigen
-`_pending_*`-Dicts). Ein Restart im 3-Min-Confirm-Fenster verliert die Vormerkung
-— akzeptabel, wie heute. Kein SQLite für einen 3-Minuten-Confirm.
+`_pending_*`-Dicts). Ein Restart im 10-Min-Confirm-Fenster verliert die Vormerkung
+— akzeptabel, wie heute. Kein SQLite für einen kurzlebigen Confirm.
 
 **Nebenläufigkeit:** Ein neuer Agentenlauf für denselben Chat ersetzt den
 Pending-Store (verwirft alte, unbestätigte Aktionen) — wie heute „neue Suche
