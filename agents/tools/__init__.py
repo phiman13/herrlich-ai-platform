@@ -15,10 +15,11 @@ from claude_agent_sdk import (
 # Tool-Objekte unter privatem Alias importieren — sonst überschattet der
 # re-exportierte Name das gleichnamige Submodul (tools.workspace_tool).
 from .workspace_tool import workspace_tool as _workspace_capability
+from .weather_tool import weather_tool as _weather_capability
 
 _MCP_SERVER_NAME = "jarvis"
 # Alle in diesem Server registrierten Tools.
-_TOOLS = [_workspace_capability]
+_TOOLS = [_workspace_capability, _weather_capability]
 # Voller MCP-Tool-Name: mcp__<server-name>__<tool-name>
 _ALLOWED_TOOL_NAMES = {f"mcp__{_MCP_SERVER_NAME}__{t.name}" for t in _TOOLS}
 

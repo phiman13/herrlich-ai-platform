@@ -19,6 +19,7 @@ def test_system_prompt_includes_memory_context():
 def test_system_prompt_empty_memory():
     prompt = agent.build_system_prompt("")
     assert prompt.startswith("Du bist Jarvis")
+    assert "- weather:" in prompt
 
 
 def test_format_history_interleaves_roles():

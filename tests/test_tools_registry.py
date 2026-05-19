@@ -6,10 +6,11 @@ from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 import tools
 
 
-def test_build_mcp_server_registers_workspace():
+def test_build_mcp_server_registers_tools():
     server = tools.build_mcp_server()
     assert server is not None
     assert "mcp__jarvis__workspace" in tools._ALLOWED_TOOL_NAMES
+    assert "mcp__jarvis__weather" in tools._ALLOWED_TOOL_NAMES
 
 
 @pytest.mark.asyncio

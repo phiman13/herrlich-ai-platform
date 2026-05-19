@@ -31,7 +31,7 @@ async def test_personal_routed_to_agent():
 
 
 @pytest.mark.asyncio
-async def test_weather_routed_to_handler():
+async def test_weather_routed_to_agent():
     app_state.conversation_db = None
     app_state.profile_agent = None
     app_state.memory_agent = None
@@ -40,12 +40,12 @@ async def test_weather_routed_to_handler():
         patch(
             "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("weather"))
         ),
-        patch("dispatch.run_agent", new=AsyncMock()) as mock_run,
-        patch("dispatch.handle_weather", new=AsyncMock()) as mock_weather,
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="Wetter-Antwort")
+        ) as mock_run,
     ):
         await dispatch._process_text("Wetter morgen?", 123, update)
-    mock_weather.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
 
 
 @pytest.mark.asyncio

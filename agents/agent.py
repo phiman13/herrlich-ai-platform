@@ -42,6 +42,8 @@ def build_system_prompt(memory_context: str) -> str:
         "(Projekte u.a.: recipe-app, herrlich-ai-platform, immo-radar, "
         "high-five-website, refurbish-business, cv-project). Nutze es für fundierte "
         "Fragen zu seinen Projekten — list/search/read, nicht raten.\n"
+        "- weather: Wettervorhersage für Tutzing (Heimatort) oder einen "
+        "genannten Ort.\n"
         "- WebSearch / WebFetch: Aktuelle Informationen aus dem Internet.\n\n"
         "Arbeitsweise: Bei Fragen zu Philipps Projekten oder Code zuerst den "
         "Workspace erkunden, dann fundiert antworten. Bei Fragen zu aktuellen "

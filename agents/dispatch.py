@@ -21,7 +21,6 @@ from intent_handlers import (
     handle_reminder_write,
     handle_news,
     handle_tasks,
-    handle_weather,
     handle_briefing,
     handle_memory,
 )
@@ -29,11 +28,15 @@ from intent_handlers import (
 logger = logging.getLogger("jarvis.dispatch")
 
 
+# Profil + semantische Erinnerungen — nur für die Gesprächs-Intents. Das
+# Embedding-Retrieval lohnt für triviale Intents wie weather/news nicht.
 _MEMORY_INTENTS = {"personal", "work", "research"}
-_HISTORY_INTENTS = {"personal", "work", "research"}
+# Gesprächsverlauf laden + speichern — auch für agentische Intents, damit
+# Folgefragen („und morgen?") Kontext haben.
+_HISTORY_INTENTS = {"personal", "work", "research", "weather"}
 # Intents, die der agentische Pfad (run_agent) übernimmt. Wächst in Phase 2 mit
-# jeder Handler→Tool-Konvertierung; deckt sich aktuell mit den anderen Mengen.
-_AGENT_INTENTS = {"personal", "work", "research"}
+# jeder Handler→Tool-Konvertierung.
+_AGENT_INTENTS = {"personal", "work", "research", "weather"}
 
 
 async def start(update, context):
@@ -108,8 +111,6 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         await handle_news(chat_id, update)
     elif intent == "tasks":
         await handle_tasks(chat_id, params, update)
-    elif intent == "weather":
-        await handle_weather(chat_id, params, update)
     elif intent == "briefing":
         await handle_briefing(chat_id, update)
     elif intent == "memory":

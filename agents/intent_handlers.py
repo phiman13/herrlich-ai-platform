@@ -20,7 +20,6 @@ from tasks_agent import (
     delete_list,
     rename_list,
 )
-from weather_agent import get_weather
 from briefing_agent import build_briefing
 
 logger = logging.getLogger("jarvis.intent_handlers")
@@ -202,22 +201,6 @@ async def handle_tasks(chat_id: int, params: dict, update) -> None:
                 )
     tasks_list_label = list_name or "Tasks"
     _conv_complete(chat_id, f"Tasks {mode} ({tasks_list_label})")
-
-
-async def handle_weather(chat_id: int, params: dict, update) -> None:
-    period = params.get("period", "today")
-    time_of_day = params.get("time_of_day")
-    location = params.get("location")
-    period_label = {
-        "today": "heute",
-        "tomorrow": "morgen",
-        "week": "diese Woche",
-    }.get(period, period)
-    weather = await asyncio.to_thread(get_weather, period, time_of_day, location)
-    await update.message.reply_text(
-        f"🌤️ *Wetter {period_label}:*\n{weather}", parse_mode="Markdown"
-    )
-    _conv_complete(chat_id, f"Wetter {period_label} angezeigt")
 
 
 async def handle_briefing(chat_id: int, update) -> None:
