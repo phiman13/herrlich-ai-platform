@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Read(/Users/philippherrlich/Documents/04_Sonstiges/01_Coding/herrlich-ai-platform/*)",
+      "Read(/Users/philippherrlich/Code/herrlich-ai-platform/*)",
       "Bash(PYTHONPATH=agents .venv/bin/pytest *)",
       "Bash(.venv/bin/pytest *)",
       "Bash(.venv/bin/python -m pytest *)",
