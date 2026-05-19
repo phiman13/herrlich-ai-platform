@@ -19,7 +19,6 @@ from agent import run_agent
 from intent_handlers import (
     handle_coding,
     handle_reminder_write,
-    handle_news,
     handle_tasks,
     handle_briefing,
     handle_memory,
@@ -33,10 +32,10 @@ logger = logging.getLogger("jarvis.dispatch")
 _MEMORY_INTENTS = {"personal", "work", "research"}
 # Gesprächsverlauf laden + speichern — auch für agentische Intents, damit
 # Folgefragen („und morgen?") Kontext haben.
-_HISTORY_INTENTS = {"personal", "work", "research", "weather"}
+_HISTORY_INTENTS = {"personal", "work", "research", "weather", "news"}
 # Intents, die der agentische Pfad (run_agent) übernimmt. Wächst in Phase 2 mit
 # jeder Handler→Tool-Konvertierung.
-_AGENT_INTENTS = {"personal", "work", "research", "weather"}
+_AGENT_INTENTS = {"personal", "work", "research", "weather", "news"}
 
 
 async def start(update, context):
@@ -107,8 +106,6 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
     elif intent == "reminder_write":
         await handle_reminder_write(chat_id, params, update)
         return
-    elif intent == "news":
-        await handle_news(chat_id, update)
     elif intent == "tasks":
         await handle_tasks(chat_id, params, update)
     elif intent == "briefing":

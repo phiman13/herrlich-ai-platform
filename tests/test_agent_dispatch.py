@@ -49,6 +49,22 @@ async def test_weather_routed_to_agent():
 
 
 @pytest.mark.asyncio
+async def test_news_routed_to_agent():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("news"))),
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="News-Antwort")
+        ) as mock_run,
+    ):
+        await dispatch._process_text("Was gibt es Neues in AI?", 123, update)
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_agent_answer_persisted_to_conversation_db():
     app_state.profile_agent = None
     app_state.memory_agent = None

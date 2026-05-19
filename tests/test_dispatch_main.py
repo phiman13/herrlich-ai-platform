@@ -43,19 +43,6 @@ def test_mail_intent_dispatches_to_handle_mail():
     mock_mail.assert_awaited_once()
 
 
-def test_news_intent_calls_get_ai_news():
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route("news"),
-        ),
-        patch("intent_handlers.get_ai_news", return_value="news text") as mock_news,
-    ):
-        asyncio.run(main.handle_message(_make_update("Was gibt es Neues in AI?"), None))
-    mock_news.assert_called_once()
-
-
 def test_briefing_intent_calls_build_briefing():
     with (
         patch(

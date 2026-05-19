@@ -11,7 +11,6 @@ from app_state import _conv_complete
 import router
 from coding_agent import handle_coding_query, run_coding_action, add_backlog_item
 from vps import list_projects
-from news_agent import get_ai_news
 from tasks_agent import (
     get_tasks,
     add_task,
@@ -110,16 +109,6 @@ async def handle_reminder_write(chat_id: int, params: dict, update) -> None:
         )
         _conv_complete(chat_id, "Erinnerung fehlgeschlagen")
     return
-
-
-async def handle_news(chat_id: int, update) -> None:
-    await update.message.reply_text("📰 Lade AI-News...")
-    news = await asyncio.to_thread(get_ai_news, 48, 10)
-    await update.message.reply_text(
-        f"📰 *AI NEWS — letzte 48h*\n\n{news or 'Keine News gefunden.'}",
-        parse_mode="Markdown",
-    )
-    _conv_complete(chat_id, "AI-News angezeigt")
 
 
 async def handle_tasks(chat_id: int, params: dict, update) -> None:

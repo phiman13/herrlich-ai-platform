@@ -44,6 +44,7 @@ def build_system_prompt(memory_context: str) -> str:
         "Fragen zu seinen Projekten — list/search/read, nicht raten.\n"
         "- weather: Wettervorhersage für Tutzing (Heimatort) oder einen "
         "genannten Ort.\n"
+        "- news: Aktuelle AI-/Tech-News aus kuratierten RSS-Feeds.\n"
         "- WebSearch / WebFetch: Aktuelle Informationen aus dem Internet.\n\n"
         "Arbeitsweise: Bei Fragen zu Philipps Projekten oder Code zuerst den "
         "Workspace erkunden, dann fundiert antworten. Bei Fragen zu aktuellen "
