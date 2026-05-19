@@ -109,7 +109,7 @@ async def run_agent(
             opts_kwargs = dict(
                 model=os.environ.get("JARVIS_AGENT_MODEL", _DEFAULT_MODEL),
                 system_prompt=build_system_prompt(memory_context),
-                mcp_servers={"jarvis": build_mcp_server()},
+                mcp_servers={"jarvis": build_mcp_server(chat_id)},
                 # tools: beschränkt die eingebauten Werkzeuge (kein Bash/Edit/Read).
                 # allowed_tools: auto-erlaubt — überspringt den can_use_tool-Hook.
                 allowed_tools=["WebSearch", "WebFetch"],

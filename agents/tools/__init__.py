@@ -17,22 +17,33 @@ from claude_agent_sdk import (
 from .workspace_tool import workspace_tool as _workspace_capability
 from .weather_tool import weather_tool as _weather_capability
 from .news_tool import news_tool as _news_capability
+from . import tasks_tool
 
 _MCP_SERVER_NAME = "jarvis"
-# Alle in diesem Server registrierten Tools.
-_TOOLS = [_workspace_capability, _weather_capability, _news_capability]
-# Voller MCP-Tool-Name: mcp__<server-name>__<tool-name>
-_ALLOWED_TOOL_NAMES = {f"mcp__{_MCP_SERVER_NAME}__{t.name}" for t in _TOOLS}
+
+# Read-only Tools sind module-level; chat-skopierte Tools (tasks) werden pro
+# Lauf gebaut, weil sie chat_id zum Vormerken von Schreibaktionen brauchen.
+_STATIC_TOOLS = [_workspace_capability, _weather_capability, _news_capability]
 
 
-def build_mcp_server() -> McpSdkServerConfig:
-    """In-Process-MCP-Server mit allen Jarvis-Tools."""
-    return create_sdk_mcp_server(name=_MCP_SERVER_NAME, version="1.0.0", tools=_TOOLS)
+def _all_tools(chat_id: int) -> list:
+    """Alle Tool-Objekte für einen Lauf."""
+    return _STATIC_TOOLS + [tasks_tool.make_tasks_tool(chat_id)]
+
+
+# Allowlist — aus einem Probe-Build; chat_id ist für die Namen irrelevant.
+_ALLOWED_TOOL_NAMES = {f"mcp__{_MCP_SERVER_NAME}__{t.name}" for t in _all_tools(0)}
+
+
+def build_mcp_server(chat_id: int) -> McpSdkServerConfig:
+    """In-Process-MCP-Server mit allen Jarvis-Tools für einen Chat."""
+    return create_sdk_mcp_server(
+        name=_MCP_SERVER_NAME, version="1.0.0", tools=_all_tools(chat_id)
+    )
 
 
 # Executor-Registry — tool-name -> execute_write(action, params) -> str.
-# Wird von den Schreib-Tool-Modulen befüllt (ab Plan 3: tasks).
-_WRITE_EXECUTORS: dict = {}
+_WRITE_EXECUTORS: dict = {"tasks": tasks_tool.execute_write}
 
 
 async def execute_pending_action(action: dict) -> str:
