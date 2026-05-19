@@ -21,16 +21,16 @@ agents/router.py            Claude Haiku — klassifiziert Intent
         │                   Output: {intent, confidence, params, reasoning}
         │
         ├── briefing        briefing_agent.py
-        ├── coding          coding_agent.py + github_agent.py
         ├── memory          memory_agent.py
         ├── personal      ┐
         ├── work          │
         ├── research      │
-        ├── mail          ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
-        ├── calendar      │  Tools workspace/web/weather/news/tasks/mail/calendar,
-        ├── weather       │  Denk-Schleife, History, MemoryAgent, Write-Confirm
-        ├── news          │
+        ├── mail          │
+        ├── calendar      ├─ agent.py run_agent — echter Agent (Claude Agent SDK):
+        ├── weather       │  Tools workspace/web/weather/news/tasks/mail/calendar/coding,
+        ├── news          │  Denk-Schleife, History, MemoryAgent, Write-Confirm
         ├── tasks         │
+        ├── coding        │
         └── reminder_write┘
 
 APScheduler (SQLite Jobstore, restart-safe):
@@ -45,7 +45,7 @@ agents/
   dispatch.py           Telegram-Dispatch: _process_text-Orchestrator + handle_message/voice/start
   app_state.py          Geteilter State (Pending-Agenten-Aktionen, lazy Agenten) + TTL-Helper
   formatting.py         Reine Formatter (Kalender/Mail/Markdown)
-  intent_handlers.py    Schlanke Intent-Handler (coding/briefing/memory)
+  intent_handlers.py    Schlanke Intent-Handler (briefing/memory)
   callbacks.py          InlineKeyboard-Callback-Router (handle_callback)
   github_webhook.py     GitHub-Auto-Deploy-Webhook
   router.py             Intent-Routing via Claude Haiku

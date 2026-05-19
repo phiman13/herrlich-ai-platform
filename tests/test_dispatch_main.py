@@ -67,7 +67,11 @@ def test_briefing_intent_calls_build_briefing():
     mock_b.assert_awaited_once()
 
 
-def test_coding_query_intent_calls_handle_coding_query():
+def test_coding_intent_dispatches_to_run_agent():
+    """coding-Intent läuft jetzt durch run_agent (nicht mehr handle_coding)."""
+    import dispatch as dispatch_mod
+
+    assert not hasattr(dispatch_mod, "handle_coding")
     with (
         patch(
             "dispatch.route_with_llm",
@@ -78,13 +82,13 @@ def test_coding_query_intent_calls_handle_coding_query():
             ),
         ),
         patch(
-            "intent_handlers.handle_coding_query",
+            "dispatch.run_agent",
             new_callable=AsyncMock,
-            return_value="backlog",
-        ) as mock_q,
+            return_value="Coding-Antwort",
+        ) as mock_agent,
     ):
         asyncio.run(main.handle_message(_make_update("Backlog von recipe-app?"), None))
-    mock_q.assert_awaited_once()
+    mock_agent.assert_awaited_once()
 
 
 def test_low_confidence_asks_for_clarification():

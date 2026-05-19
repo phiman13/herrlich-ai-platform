@@ -20,6 +20,7 @@ from .news_tool import news_tool as _news_capability
 from . import tasks_tool
 from . import mail_tool
 from . import calendar_tool
+from . import coding_tool
 
 _MCP_SERVER_NAME = "jarvis"
 
@@ -34,6 +35,7 @@ def _all_tools(chat_id: int) -> list:
         tasks_tool.make_tasks_tool(chat_id),
         mail_tool.make_mail_tool(chat_id),
         calendar_tool.make_calendar_tool(chat_id),
+        coding_tool.make_coding_tool(chat_id),
     ]
 
 
@@ -53,6 +55,7 @@ _WRITE_EXECUTORS: dict = {
     "tasks": tasks_tool.execute_write,
     "mail": mail_tool.execute_write,
     "calendar": calendar_tool.execute_write,
+    "coding": coding_tool.execute_write,
 }
 
 

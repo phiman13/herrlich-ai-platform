@@ -107,6 +107,41 @@ def test_history_saved_for_calendar_intent():
     app_state.conversation_db = None
 
 
+def test_history_saved_for_coding_intent():
+    """coding-Intent läuft jetzt durch run_agent → History wird gespeichert."""
+    mock_db = MagicMock()
+    mock_db.get_recent = AsyncMock(return_value=[])
+    mock_db.save = AsyncMock()
+    app_state.conversation_db = mock_db
+
+    with patch(
+        "dispatch.route_with_llm",
+        return_value={
+            "intent": "coding",
+            "confidence": 9,
+            "params": {},
+            "reasoning": "test",
+        },
+    ):
+        with patch(
+            "dispatch.run_agent",
+            new_callable=AsyncMock,
+            return_value="Backlog: keine offenen Items.",
+        ):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 77774
+                update.message.text = "Backlog von recipe-app?"
+                update.message.chat_id = 123
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
+
+    mock_db.get_recent.assert_awaited_once()
+    assert mock_db.save.await_count == 2
+
+    app_state.conversation_db = None
+
+
 def test_profile_content_injected_for_personal_intent():
     mock_profile = MagicMock()
     mock_profile.load.return_value = "## Beruf & Rolle\nStrategischer Berater\n"
