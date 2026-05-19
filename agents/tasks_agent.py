@@ -101,17 +101,15 @@ def get_briefing_tasks(list_name: str) -> list[str]:
         resp = httpx.get(
             f"{_BASE}/lists/{list_id}/tasks",
             headers=_headers(),
-            params={
-                "$filter": "status ne 'completed'",
-                "$top": 100,
-                "$select": "title,dueDateTime,reminderDateTime,isReminderOn",
-            },
+            params={"$top": 100},
             timeout=10,
         )
         resp.raise_for_status()
         today = datetime.now(_BERLIN).strftime("%Y-%m-%d")
         titles = []
         for t in resp.json().get("value", []):
+            if t.get("status") == "completed":
+                continue
             title = t.get("title", "")
             if _is_system_task(title):
                 continue
