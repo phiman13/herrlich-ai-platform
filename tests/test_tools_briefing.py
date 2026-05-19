@@ -11,24 +11,16 @@ async def test_build_returns_briefing_text(monkeypatch):
 
     monkeypatch.setattr(briefing_tool_mod, "_build_briefing", fake_briefing)
     result = await briefing_tool_mod.briefing_tool.handler({"action": "build"})
-    assert "Guten Morgen" in result["content"][0]["text"]
+    assert result["content"][0]["text"] == "Guten Morgen! Heute 22°C."
 
 
 @pytest.mark.asyncio
-async def test_build_unknown_action_is_error(monkeypatch):
-    async def fake_briefing():
-        return "x"
-
-    monkeypatch.setattr(briefing_tool_mod, "_build_briefing", fake_briefing)
+async def test_build_unknown_action_is_error():
     result = await briefing_tool_mod.briefing_tool.handler({"action": "frobnicate"})
     assert result["content"][0]["text"].startswith("FEHLER")
 
 
 @pytest.mark.asyncio
-async def test_build_empty_action_is_error(monkeypatch):
-    async def fake_briefing():
-        return "x"
-
-    monkeypatch.setattr(briefing_tool_mod, "_build_briefing", fake_briefing)
+async def test_build_empty_action_is_error():
     result = await briefing_tool_mod.briefing_tool.handler({})
     assert result["content"][0]["text"].startswith("FEHLER")
