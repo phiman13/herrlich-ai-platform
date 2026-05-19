@@ -13,8 +13,6 @@ from app_state import (
 )
 from router import route_with_llm
 from voice_agent import transcribe
-from mail_handler import handle_mail_intent
-from calendar_handler import handle_calendar_intent
 from agent import run_agent
 from intent_handlers import (
     handle_coding,
@@ -38,6 +36,8 @@ _HISTORY_INTENTS = {
     "news",
     "tasks",
     "reminder_write",
+    "mail",
+    "calendar",
 }
 # Intents, die der agentische Pfad (run_agent) übernimmt. Wächst in Phase 2 mit
 # jeder Handler→Tool-Konvertierung.
@@ -49,6 +49,8 @@ _AGENT_INTENTS = {
     "news",
     "tasks",
     "reminder_write",
+    "mail",
+    "calendar",
 }
 
 
@@ -109,12 +111,6 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
 
     if intent in _AGENT_INTENTS:
         answer = await run_agent(chat_id, text, history, memory_context)
-    elif intent == "calendar":
-        await handle_calendar_intent(chat_id, text, params)
-        return
-    elif intent == "mail":
-        await handle_mail_intent(chat_id, text, params)
-        return
     elif intent == "coding":
         await handle_coding(chat_id, text, params, update)
     elif intent == "briefing":

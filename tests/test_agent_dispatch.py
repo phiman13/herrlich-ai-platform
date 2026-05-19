@@ -125,6 +125,40 @@ async def test_weather_does_not_trigger_profile_update():
 
 
 @pytest.mark.asyncio
+async def test_mail_routed_to_agent():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("mail"))),
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="Mail-Antwort")
+        ) as mock_run,
+    ):
+        await dispatch._process_text("Was Wichtiges im Posteingang?", 123, update)
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_calendar_routed_to_agent():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch(
+            "dispatch.route_with_llm", new=AsyncMock(return_value=_routing("calendar"))
+        ),
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="Kalender-Antwort")
+        ) as mock_run,
+    ):
+        await dispatch._process_text("Nächster Termin?", 123, update)
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_agent_answer_persisted_to_conversation_db():
     app_state.profile_agent = None
     app_state.memory_agent = None

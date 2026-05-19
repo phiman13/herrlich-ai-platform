@@ -18,17 +18,23 @@ from .workspace_tool import workspace_tool as _workspace_capability
 from .weather_tool import weather_tool as _weather_capability
 from .news_tool import news_tool as _news_capability
 from . import tasks_tool
+from . import mail_tool
+from . import calendar_tool
 
 _MCP_SERVER_NAME = "jarvis"
 
-# Read-only Tools sind module-level; chat-skopierte Tools (tasks) werden pro
-# Lauf gebaut, weil sie chat_id zum Vormerken von Schreibaktionen brauchen.
+# Read-only Tools sind module-level; chat-skopierte Tools (tasks, mail, calendar)
+# werden pro Lauf gebaut, weil sie chat_id zum Vormerken von Schreibaktionen brauchen.
 _STATIC_TOOLS = [_workspace_capability, _weather_capability, _news_capability]
 
 
 def _all_tools(chat_id: int) -> list:
     """Alle Tool-Objekte für einen Lauf."""
-    return _STATIC_TOOLS + [tasks_tool.make_tasks_tool(chat_id)]
+    return _STATIC_TOOLS + [
+        tasks_tool.make_tasks_tool(chat_id),
+        mail_tool.make_mail_tool(chat_id),
+        calendar_tool.make_calendar_tool(chat_id),
+    ]
 
 
 # Allowlist — aus einem Probe-Build; chat_id ist für die Namen irrelevant.
@@ -43,7 +49,11 @@ def build_mcp_server(chat_id: int) -> McpSdkServerConfig:
 
 
 # Executor-Registry — tool-name -> execute_write(action, params) -> str.
-_WRITE_EXECUTORS: dict = {"tasks": tasks_tool.execute_write}
+_WRITE_EXECUTORS: dict = {
+    "tasks": tasks_tool.execute_write,
+    "mail": mail_tool.execute_write,
+    "calendar": calendar_tool.execute_write,
+}
 
 
 async def execute_pending_action(action: dict) -> str:

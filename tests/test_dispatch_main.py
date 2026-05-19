@@ -28,19 +28,26 @@ def _route(intent, params=None):
     return {"intent": intent, "confidence": 9, "params": params or {}, "reasoning": "t"}
 
 
-def test_mail_intent_dispatches_to_handle_mail():
+def test_mail_intent_dispatches_to_run_agent():
+    """mail-Intent läuft jetzt durch run_agent (nicht mehr handle_mail_intent)."""
+    import dispatch as dispatch_mod
+
+    assert not hasattr(dispatch_mod, "handle_mail_intent")
+    assert not hasattr(dispatch_mod, "handle_calendar_intent")
     with (
         patch(
             "dispatch.route_with_llm",
             new_callable=AsyncMock,
             return_value=_route("mail", {"mode": "quick_scan"}),
         ),
-        patch("dispatch.handle_mail_intent", new_callable=AsyncMock) as mock_mail,
+        patch(
+            "dispatch.run_agent", new_callable=AsyncMock, return_value="Mail-Antwort"
+        ) as mock_agent,
     ):
         asyncio.run(
             main.handle_message(_make_update("Was Wichtiges im Posteingang?"), None)
         )
-    mock_mail.assert_awaited_once()
+    mock_agent.assert_awaited_once()
 
 
 def test_briefing_intent_calls_build_briefing():

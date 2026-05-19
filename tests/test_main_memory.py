@@ -56,7 +56,7 @@ def test_retrieve_called_for_personal_intent(fresh_memory_agent):
 
 
 def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
-    """retrieve() is NOT called for calendar intent."""
+    """retrieve() is NOT called for calendar intent — calendar is not in _MEMORY_INTENTS."""
     called = []
 
     async def fake_retrieve():
@@ -69,24 +69,22 @@ def test_retrieve_not_called_for_calendar_intent(fresh_memory_agent):
             return_value={
                 "intent": "calendar",
                 "confidence": 9,
-                "params": {
-                    "mode": "read",
-                    "kind": "today",
-                    "start": None,
-                    "end": None,
-                    "title": None,
-                    "calendar_name": None,
-                },
+                "params": {},
                 "reasoning": "test",
             },
         ):
-            with patch("calendar_handler.handle_calendar", new_callable=AsyncMock):
-                update = MagicMock()
-                update.update_id = 99992
-                update.message.text = "Was habe ich heute?"
-                update.message.chat_id = 123
-                update.message.reply_text = AsyncMock()
-                asyncio.run(main_module.handle_message(update, None))
+            with patch(
+                "dispatch.run_agent",
+                new_callable=AsyncMock,
+                return_value="Heute hast du 2 Termine.",
+            ):
+                with patch("app_state.send_typing", new_callable=AsyncMock):
+                    update = MagicMock()
+                    update.update_id = 99992
+                    update.message.text = "Was habe ich heute?"
+                    update.message.chat_id = 123
+                    update.message.reply_text = AsyncMock()
+                    asyncio.run(main_module.handle_message(update, None))
 
     assert called == []
 

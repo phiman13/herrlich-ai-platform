@@ -72,7 +72,8 @@ def test_history_saved_after_personal_intent():
     app_state.conversation_db = None
 
 
-def test_history_not_saved_for_calendar_intent():
+def test_history_saved_for_calendar_intent():
+    """calendar-Intent läuft jetzt durch run_agent → History wird gespeichert."""
     mock_db = MagicMock()
     mock_db.get_recent = AsyncMock(return_value=[])
     mock_db.save = AsyncMock()
@@ -83,27 +84,25 @@ def test_history_not_saved_for_calendar_intent():
         return_value={
             "intent": "calendar",
             "confidence": 9,
-            "params": {
-                "mode": "read",
-                "kind": "today",
-                "start": None,
-                "end": None,
-                "title": None,
-                "calendar_name": None,
-            },
+            "params": {},
             "reasoning": "test",
         },
     ):
-        with patch("calendar_handler.handle_calendar", new_callable=AsyncMock):
-            update = MagicMock()
-            update.update_id = 77773
-            update.message.text = "Was habe ich heute?"
-            update.message.chat_id = 123
-            update.message.reply_text = AsyncMock()
-            asyncio.run(main_module.handle_message(update, None))
+        with patch(
+            "dispatch.run_agent",
+            new_callable=AsyncMock,
+            return_value="Heute hast du 2 Termine.",
+        ):
+            with patch("app_state.send_typing", new_callable=AsyncMock):
+                update = MagicMock()
+                update.update_id = 77773
+                update.message.text = "Was habe ich heute?"
+                update.message.chat_id = 123
+                update.message.reply_text = AsyncMock()
+                asyncio.run(main_module.handle_message(update, None))
 
-    mock_db.save.assert_not_called()
-    mock_db.get_recent.assert_not_called()
+    mock_db.get_recent.assert_awaited_once()
+    assert mock_db.save.await_count == 2
 
     app_state.conversation_db = None
 

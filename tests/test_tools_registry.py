@@ -13,6 +13,14 @@ def test_build_mcp_server_registers_tools():
     assert "mcp__jarvis__weather" in tools._ALLOWED_TOOL_NAMES
     assert "mcp__jarvis__news" in tools._ALLOWED_TOOL_NAMES
     assert "mcp__jarvis__tasks" in tools._ALLOWED_TOOL_NAMES
+    assert "mcp__jarvis__mail" in tools._ALLOWED_TOOL_NAMES
+    assert "mcp__jarvis__calendar" in tools._ALLOWED_TOOL_NAMES
+
+
+def test_write_executors_include_mail_and_calendar():
+    assert "mail" in tools._WRITE_EXECUTORS
+    assert "calendar" in tools._WRITE_EXECUTORS
+    assert "tasks" in tools._WRITE_EXECUTORS
 
 
 @pytest.mark.asyncio
