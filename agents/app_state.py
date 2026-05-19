@@ -121,33 +121,3 @@ async def _keep_typing(chat_id: int, stop_event: asyncio.Event):
     while not stop_event.is_set():
         await send_typing(chat_id)
         await asyncio.sleep(4)
-
-
-# ---------------------------------------------------------------------------
-# Conversation history for router context
-# Each entry: {"u": user_text, "j": bot_summary}
-# ---------------------------------------------------------------------------
-
-_recent_conv: dict[int, list[dict]] = {}
-
-
-def _conv_append_user(chat_id: int, text: str) -> None:
-    hist = _recent_conv.get(chat_id, [])
-    hist.append({"u": text, "j": ""})
-    _recent_conv[chat_id] = hist[-8:]
-
-
-def _conv_complete(chat_id: int, summary: str) -> None:
-    hist = _recent_conv.get(chat_id, [])
-    if hist:
-        hist[-1]["j"] = summary[:180]
-
-
-def _conv_to_prev_texts(chat_id: int) -> list[str]:
-    """Return interleaved Philipp/Jarvis lines for the last 3 completed turns."""
-    completed = [t for t in _recent_conv.get(chat_id, []) if t["j"]][-3:]
-    lines = []
-    for t in completed:
-        lines.append(f"Philipp: {t['u']}")
-        lines.append(f"Jarvis: {t['j']}")
-    return lines

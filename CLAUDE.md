@@ -177,7 +177,6 @@ MUSS vor Implementierungsarbeit gelesen werden: `DEVELOPMENT.md`.
 
 ```python
 pending_agent_actions: dict[int, dict]   # Vorgemerkte Agenten-Schreibaktionen (Write-Confirm)
-_recent_conv: dict[int, list]            # Letzte Konversations-Paare für Router-Kontext
 ```
 
 ### Callbacks (InlineKeyboard)
