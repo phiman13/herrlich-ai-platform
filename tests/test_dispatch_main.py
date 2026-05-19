@@ -60,34 +60,6 @@ def test_briefing_intent_calls_build_briefing():
     mock_b.assert_awaited_once()
 
 
-def test_tasks_read_intent_calls_get_tasks():
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route("tasks", {"mode": "read"}),
-        ),
-        patch("intent_handlers.get_tasks", return_value="• task") as mock_tasks,
-    ):
-        asyncio.run(main.handle_message(_make_update("Zeig meine Tasks"), None))
-    mock_tasks.assert_called_once()
-
-
-def test_reminder_write_intent_calls_add_task():
-    with (
-        patch(
-            "dispatch.route_with_llm",
-            new_callable=AsyncMock,
-            return_value=_route("reminder_write", {"title": "Anruf", "due_date": None}),
-        ),
-        patch("intent_handlers.add_task", return_value=True) as mock_add,
-    ):
-        asyncio.run(
-            main.handle_message(_make_update("Erinnere mich an den Anruf"), None)
-        )
-    mock_add.assert_called_once()
-
-
 def test_coding_query_intent_calls_handle_coding_query():
     with (
         patch(

@@ -65,6 +65,41 @@ async def test_news_routed_to_agent():
 
 
 @pytest.mark.asyncio
+async def test_tasks_routed_to_agent():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch("dispatch.route_with_llm", new=AsyncMock(return_value=_routing("tasks"))),
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="Tasks-Antwort")
+        ) as mock_run,
+    ):
+        await dispatch._process_text("Zeig meine Tasks", 123, update)
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reminder_write_routed_to_agent():
+    app_state.conversation_db = None
+    app_state.profile_agent = None
+    app_state.memory_agent = None
+    update = MagicMock()
+    with (
+        patch(
+            "dispatch.route_with_llm",
+            new=AsyncMock(return_value=_routing("reminder_write")),
+        ),
+        patch(
+            "dispatch.run_agent", new=AsyncMock(return_value="Erinnerung-Antwort")
+        ) as mock_run,
+    ):
+        await dispatch._process_text("Erinnere mich an den Anruf", 123, update)
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_weather_does_not_trigger_profile_update():
     """Triviale Intents (weather/news) lösen kein Profil-Update aus — nur
     Gesprächs-Intents (_MEMORY_INTENTS) lernen ins Profil."""

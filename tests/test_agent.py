@@ -21,6 +21,7 @@ def test_system_prompt_empty_memory():
     assert prompt.startswith("Du bist Jarvis")
     assert "- weather:" in prompt
     assert "- news:" in prompt
+    assert "- tasks:" in prompt
 
 
 def test_format_history_interleaves_roles():
