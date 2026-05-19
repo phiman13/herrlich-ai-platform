@@ -1,8 +1,7 @@
-"""Agentische Konversations-Runtime des agentischen Jarvis.
+"""Agentische Konversations-Runtime des Jarvis.
 
-Ein zustandsloser SDK-Lauf pro Telegram-Nachricht. Der Router bleibt in Phase 2
-vorgelagert; diese Runtime übernimmt die agentischen Intents (_AGENT_INTENTS in
-dispatch.py).
+Ein zustandsloser SDK-Lauf pro Telegram-Nachricht. Kein vorgelagerter Router —
+jede Nachricht läuft direkt durch run_agent mit allen Tools.
 """
 
 import asyncio

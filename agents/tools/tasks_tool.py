@@ -151,7 +151,6 @@ async def execute_write(action: str, params: dict) -> str:
         )
     if action == "create_list":
         ok = await asyncio.to_thread(create_list, params["name"])
-        _invalidate_list_cache(ok)
         return (
             f"✅ Liste '{params['name']}' angelegt."
             if ok
@@ -159,7 +158,6 @@ async def execute_write(action: str, params: dict) -> str:
         )
     if action == "delete_list":
         ok = await asyncio.to_thread(delete_list, params["list_name"])
-        _invalidate_list_cache(ok)
         return (
             f"✅ Liste '{params['list_name']}' gelöscht."
             if ok
@@ -169,22 +167,9 @@ async def execute_write(action: str, params: dict) -> str:
         ok = await asyncio.to_thread(
             rename_list, params["list_name"], params["new_name"]
         )
-        _invalidate_list_cache(ok)
         return (
             f"✅ Liste '{params['list_name']}' umbenannt zu '{params['new_name']}'."
             if ok
             else f"❌ Liste '{params['list_name']}' nicht gefunden."
         )
     return f"❌ Unbekannte tasks-Aktion '{action}'."
-
-
-def _invalidate_list_cache(ok: bool) -> None:
-    """Nach einer Listen-Mutation den To-Do-Listen-Cache des Routers leeren.
-
-    Deferred import — vermeidet einen Import-Zyklus tools -> router.
-    """
-    if not ok:
-        return
-    import router
-
-    router._todo_lists_cache = ([], 0.0)

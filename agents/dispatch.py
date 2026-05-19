@@ -3,8 +3,6 @@
 import asyncio
 import logging
 
-from telegram import Update
-
 import app_state
 from voice_agent import transcribe
 from agent import run_agent
@@ -23,7 +21,7 @@ async def start(update, context):
     )
 
 
-async def _process_text(text: str, chat_id: int, update: Update) -> None:
+async def _process_text(text: str, chat_id: int) -> None:
     memory_context = ""
     if app_state.profile_agent:
         try:
@@ -72,7 +70,7 @@ async def handle_message(update, context):
 
     text = update.message.text
     chat_id = update.message.chat_id
-    await _process_text(text, chat_id, update)
+    await _process_text(text, chat_id)
 
 
 async def handle_voice(update, context):
@@ -96,4 +94,4 @@ async def handle_voice(update, context):
         )
         return
 
-    await _process_text(text, chat_id, update)
+    await _process_text(text, chat_id)

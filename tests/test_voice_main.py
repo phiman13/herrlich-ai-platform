@@ -27,7 +27,7 @@ def test_handle_voice_transcribes_and_calls_process_text():
         asyncio.run(main_module.handle_voice(mock_update, None))
 
     mock_transcribe.assert_called_once_with(bytes(b"fake_ogg"))
-    mock_process.assert_called_once_with("Was kostet Bitcoin?", 123, mock_update)
+    mock_process.assert_called_once_with("Was kostet Bitcoin?", 123)
 
 
 def test_handle_voice_sends_error_on_transcription_failure():
