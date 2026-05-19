@@ -361,3 +361,37 @@ async def test_execute_write_forward_no_valid_email(monkeypatch):
     assert calls == []
     assert "❌" in msg
     assert "kein-at-zeichen" in msg
+
+
+@pytest.mark.asyncio
+async def test_execute_write_mark_read(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        mail_tool_mod,
+        "MailAgent",
+        lambda: _MockAgent(
+            mark_read=lambda mid, flag: calls.append((mid, flag)) or True
+        ),
+    )
+    msg = await mail_tool_mod.execute_write(
+        "mark_read", {"mail_id": "m1", "subject": "X"}
+    )
+    assert calls == [("m1", True)]
+    assert "✅" in msg
+
+
+@pytest.mark.asyncio
+async def test_execute_write_mark_unread(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        mail_tool_mod,
+        "MailAgent",
+        lambda: _MockAgent(
+            mark_read=lambda mid, flag: calls.append((mid, flag)) or True
+        ),
+    )
+    msg = await mail_tool_mod.execute_write(
+        "mark_unread", {"mail_id": "m1", "subject": "X"}
+    )
+    assert calls == [("m1", False)]
+    assert "✅" in msg
