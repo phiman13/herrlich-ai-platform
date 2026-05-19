@@ -212,6 +212,23 @@ async def test_unknown_action_is_error():
     assert result["content"][0]["text"].startswith("FEHLER")
 
 
+@pytest.mark.asyncio
+async def test_update_requires_at_least_one_change():
+    app_state.pending_agent_actions.clear()
+    tool = cal_tool_mod.make_calendar_tool(7)
+    result = await tool.handler(
+        {
+            "action": "update",
+            "event_id": "ev1",
+            "title": "Meeting",
+        }
+    )
+    assert result["content"][0]["text"].startswith("FEHLER")
+    assert "mindestens ein neues Feld" in result["content"][0]["text"]
+    assert app_state.peek_pending(7) is None
+    app_state.pending_agent_actions.clear()
+
+
 # execute_write
 
 

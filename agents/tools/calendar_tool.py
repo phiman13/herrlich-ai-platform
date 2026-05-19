@@ -150,6 +150,17 @@ def make_calendar_tool(chat_id: int):
         missing = _missing_fields(action, params)
         if missing:
             return _text(f"FEHLER: action='{action}' braucht: {missing}.")
+
+        # Validate update action: must have at least one change field
+        if action == "update":
+            has_change = any(
+                params.get(f)
+                for f in ("new_title", "new_start_iso", "new_end_iso", "new_location")
+            )
+            if not has_change:
+                return _text(
+                    "FEHLER: action='update' braucht mindestens ein neues Feld (new_title, new_start_iso, new_end_iso oder new_location)."
+                )
         label = _label(action, params)
         app_state.stage_agent_action(chat_id, "calendar", action, label, params)
         return _text(
