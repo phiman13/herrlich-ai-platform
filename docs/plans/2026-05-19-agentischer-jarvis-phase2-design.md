@@ -139,7 +139,12 @@ und `_HISTORY_INTENTS` (Folgefragen-Kontext, z. B. „und morgen?"). `_MEMORY_IN
 Gesprächs-Intents `personal`/`work`/`research` vorbehalten: für triviale Intents
 wie `weather`/`news` lohnt der Retrieval nicht und widerspräche dem „trivial-schnell"-
 Ziel. Nebeneffekt von `_HISTORY_INTENTS`: das liefert den Backlog-P2-Punkt
-„Gesprächsverlauf für alle Intents" gratis mit.
+„Gesprächsverlauf für alle Intents" gratis mit. Das Profil-Lernen
+(`profile_agent.update`) ist ebenfalls ein Memory-Concern und folgt
+`_MEMORY_INTENTS`, nicht `_HISTORY_INTENTS`. Offen: `run_agent` ruft am
+Lauf-Ende intent-unabhängig `memory_agent.extract()` auf — triviale Intents
+lösen damit eine (meist leer ausgehende) Memory-Extraktion aus; bei realem
+Bedarf in einem späteren Plan gaten.
 
 **Router in Phase 2:** bleibt physisch da, klassifiziert weiter. Seine
 dynamische Kontext-Erzeugung (Kalender-Namen, To-Do-Listen, Mail-Ordner im

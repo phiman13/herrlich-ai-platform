@@ -132,9 +132,12 @@ async def _process_text(text: str, chat_id: int, update: Update) -> None:
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
+    # Profil-Lernen ist ein Memory-Concern → _MEMORY_INTENTS, nicht
+    # _HISTORY_INTENTS: triviale Intents wie weather/news sollen keinen
+    # Profil-Update-Lauf auslösen.
     if (
         app_state.profile_agent
-        and intent in _HISTORY_INTENTS
+        and intent in _MEMORY_INTENTS
         and answer
         and not answer.startswith("Fehler:")
     ):

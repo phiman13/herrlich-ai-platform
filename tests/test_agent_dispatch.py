@@ -65,6 +65,31 @@ async def test_news_routed_to_agent():
 
 
 @pytest.mark.asyncio
+async def test_weather_does_not_trigger_profile_update():
+    """Triviale Intents (weather/news) lösen kein Profil-Update aus — nur
+    Gesprächs-Intents (_MEMORY_INTENTS) lernen ins Profil."""
+    app_state.conversation_db = None
+    app_state.memory_agent = None
+    mock_profile = MagicMock()
+    mock_profile.load.return_value = ""
+    mock_profile.update = AsyncMock()
+    app_state.profile_agent = mock_profile
+    update = MagicMock()
+    try:
+        with (
+            patch(
+                "dispatch.route_with_llm",
+                new=AsyncMock(return_value=_routing("weather")),
+            ),
+            patch("dispatch.run_agent", new=AsyncMock(return_value="Wetter-Antwort")),
+        ):
+            await dispatch._process_text("Wetter morgen?", 123, update)
+    finally:
+        app_state.profile_agent = None
+    mock_profile.update.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_agent_answer_persisted_to_conversation_db():
     app_state.profile_agent = None
     app_state.memory_agent = None
