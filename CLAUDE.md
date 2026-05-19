@@ -2,11 +2,10 @@
 
 Persönlicher KI-Assistent via Telegram (@jarvis_herrlich_bot). FastAPI-Gateway auf Hetzner VPS, routet Nachrichten per Claude Haiku an spezialisierte Agenten.
 
-**VPS:** `root@100.115.184.3` (Tailscale) | **Service:** `jarvis.service` | **Live:** herrlich.dev
+**Stack:** Python 3.11 · FastAPI · python-telegram-bot · anthropic SDK · MSAL · APScheduler 3.x · MS Graph API · Open-Meteo · Groq Whisper · systemd · Caddy
+**Live:** herrlich.dev | VPS: `root@100.115.184.3` (Tailscale) | Service: `jarvis.service`
 
----
-
-## Architektur-Überblick
+## Architektur
 
 ```
 Telegram Webhook (POST /webhook/telegram)
@@ -38,9 +37,7 @@ APScheduler (SQLite Jobstore, restart-safe):
         └── proactive_agent.py
 ```
 
----
-
-## Datei-Struktur
+## Struktur
 
 ```
 agents/
@@ -85,211 +82,26 @@ tests/                  pytest-Suite (PYTHONPATH=agents)
 docs/plans/             Aktive Pläne (done/ = Archiv abgeschlossener)
 ```
 
----
-
-## Environment Variables (`/var/lib/jarvis/.env` auf VPS)
-
-| Variable | Pflicht | Beschreibung |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | ✅ | Bot-Token von @BotFather |
-| `TELEGRAM_CHAT_ID` | ✅ | Chat-ID für proaktive Nachrichten (Philipps Chat) |
-| `ANTHROPIC_API_KEY` | ✅ | Anthropic API Key (wird vom SDK automatisch gelesen) |
-| `MICROSOFT_CLIENT_ID` | ✅ | Azure App Registration Client ID |
-| `MICROSOFT_CLIENT_SECRET` | ✅ | Azure App Registration Client Secret |
-| `OAUTH_LOGIN_SECRET` | ✅ | Schützt `/oauth/microsoft/login` Endpoint |
-| `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token für github_agent |
-| `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook Validierung |
-| `GROQ_API_KEY` | ✅ | Groq API Key für Whisper-Transkription |
-| `JARVIS_AGENT_MODEL` | ❌ | Modell für den Agenten (Default: `claude-sonnet-4-6`) |
-| `JARVIS_WORKSPACE_DIR` | ❌ | Workspace-Root für den `workspace`-Tool (Default: `~/Code`) |
-| `JARVIS_CLAUDE_CLI_PATH` | ❌ | Expliziter Pfad zur `claude`-CLI, falls nicht auf PATH |
-| `CLAUDE_CODE_OAUTH_TOKEN` | ❌ | OAuth-Token der Claude Code CLI (headless, Abo-Auth) |
-| `JARVIS_DATA_DIR` | ❌ | Pfad für DBs + Tokens (Default: `/root/.jarvis`, prod: `/var/lib/jarvis/.jarvis`) |
-| `REMINDER_TODO_LIST` | ❌ | To-Do-Liste für Erinnerungen (Default: `Tasks`) |
-| `WEATHER_LAT` | ❌ | Breitengrad Heimatort (Default: `48.14`) |
-| `WEATHER_LON` | ❌ | Längengrad Heimatort (Default: `11.58`) |
-| `WEATHER_LOCATION_NAME` | ❌ | Anzeigename Heimatort (Default: `Tutzing`) |
-
----
-
-## Datenbank-Dateien (alle auf VPS unter `/var/lib/jarvis/.jarvis/`)
-
-| Datei | Klasse | Inhalt |
-|---|---|---|
-| `conversations.db` | `ConversationDB` | Gesprächsverlauf pro chat_id (role, content, timestamp) — nur für personal/work/research |
-| `memories.db` | `MemoryDB` | Extrahierte Fakten + Notizen (text, source, embedding blob, created_at) |
-| `sessions.db` | `SessionDB` | Claude-Code-Session-IDs pro Projekt (TTL 2h) |
-| `proactive.db` | `ProactiveDB` | reported_mails (mail_id, reported_at) + reminded_tasks (task_id, reminded_at) — 30-Tage-TTL |
-| `microsoft_tokens.json` | — | MSAL Token-Cache (verschlüsselt durch MSAL) |
-| `jarvis_jobs.db` | APScheduler | Persistente Job-Definitionen (restart-safe) |
-
----
-
-## Claude-Modelle im Einsatz
-
-| Verwendung | Modell |
-|---|---|
-| Intent-Routing (`router.py`) | `claude-haiku-4-5-20251001` |
-| Personal / Work / Research Antworten | `claude-sonnet-4-6` |
-| Mail-Importance-Check (`proactive_agent.py`) | `claude-haiku-4-5-20251001` |
-| Weekly Review (`proactive_agent.py`) | `claude-sonnet-4-6` |
-| Mail Smart-Search (`mail_agent.py`) | `claude-haiku-4-5-20251001` |
-| Memory-Extraktion (`memory_agent.py`) | `claude-haiku-4-5-20251001` |
-| Briefing (`main.py`) | `claude-haiku-4-5-20251001` |
-
----
-
-## Agenten im Detail
-
-### mail_agent.py — MailAgent-Klasse
-MS Graph REST-Calls via `requests`. Token via `get_access_token()` (MSAL).
-
-**Lese-Methoden:** `quick_scan`, `get_unread`, `search`, `smart_search`, `list_folders`, `find_folder_by_name`, `get_mail_body`
-
-**Schreib-Methoden:** `mark_read`, `archive`, `move`, `delete`, `reply`, `forward`, `send_mail`
-
-**Write-Flow in main.py:**
-1. `_handle_mail_write()` → `smart_search(mail_query, n=50)`
-2. 0 Treffer → Fehlermeldung | >5 Treffer → "zu viele" | 1 Treffer → direkt Confirm | 2–5 → InlineKeyboard
-3. Auswahl gespeichert in `_last_mail_search[chat_id]` (TTL 3 Min)
-4. `_show_mail_action_confirm()` → mark_read/unread direkt ausführen, alle anderen → Confirm-Dialog
-5. Confirm gespeichert in `_pending_mail_ops[chat_id]`
-6. Callback `mail:action:confirm` → Aktion ausführen
-
-**Hinweis:** MS Graph `/messages/{id}/archive` existiert nicht → stattdessen `move` mit `destinationId: "archive"`
-
-### calendar_agent.py — CalendarAgent-Klasse
-Outlook-Kalender via MS Graph (`httpx`). Auth über `microsoft_auth.get_access_token()`.
-
-Lesen: `GET /me/calendarView` (Header `Prefer: outlook.timezone="Europe/Berlin"`) — expandiert Serien- und Multi-Day-Termine serverseitig. Anlegen: `POST /me/events` (`create_event`). Ändern: `PATCH /me/events/{id}` (`update_event`). Absagen: `DELETE /me/events/{id}` (`delete_event`). Termin-Suche: `search_events(query, start, end)` — Substring-Match auf den Titel.
-Es wird ausschließlich der Standard-Kalender (`/me/...`) genutzt — keine Kalender-Whitelist, kein `calendar_name`-Parameter. Änderungen an Serienterminen betreffen nur das einzelne Vorkommen.
-
-### tasks_agent.py
-MS Graph To-Do. Kein eigenes Class-Wrapper — direkte `httpx`-Calls mit Token aus `get_access_token()`.
-
-`add_task(list_name, title, due_date=None, due_time=None)`:
-- Setzt `dueDateTime`, `isReminderOn=True`, `reminderDateTime` auf `due_time` (Default: 09:00)
-- System-Tasks werden in `get_tasks_raw()` via `_SYSTEM_TASK_PREFIXES` herausgefiltert
-
-### memory_agent.py — MemoryAgent-Klasse
-Embeddings via `sentence-transformers` (Modell wird lazy geladen, Fallback: kein Embedding).
-Speichert Fakten aus Gesprächen → `MemoryDB`. Retrieval via Cosine-Similarity.
-Wird nach jedem personal/work/research Response automatisch aufgerufen (`extract(user_msg, assistant_msg)`).
-
-### proactive_agent.py
-Alle Jobs sind async, laufen als APScheduler-Jobs.
-- `check_important_mails()`: Holt ungelesene Inbox-Mails → Claude-Haiku-Wichtigkeitsprüfung → sendet Digest wenn wichtig. Bereits gemeldete Mails in `ProactiveDB` skippt.
-- `send_task_reminder()`: Tasks > 2 Tage offen + nicht innerhalb 2 Tage erinnert → Telegram-Nachricht.
-- `send_weekly_review()`: Freitags — abgeschlossene Tasks + Kalender-Woche → Claude-Sonnet-Zusammenfassung.
-
-### router.py
-Baut dynamisch einen System-Prompt mit aktuellen Kalender-Namen, To-Do-Listen, Mail-Ordnern.
-Gibt JSON zurück: `{intent, confidence, params, reasoning}`. Confidence < 5 → Fallback-Antwort.
-
----
-
-## Pending-State in app_state.py (Module-Level)
-
-```python
-_pending_mail_ops: dict[int, dict]       # Mail-Write-Op wartet auf Confirm-Button
-_pending_calendar_ops: dict[int, dict]   # Kalender-Aktion (create/update/delete) wartet auf Confirm-Button
-_last_mail_search: dict[int, dict]       # Mail-Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
-_last_calendar_search: dict[int, dict]   # Termin-Multi-Treffer-Auswahl (TTL: 3 Min, timestamp im Dict)
-_recent_conv: dict[int, list]            # Letzte Konversations-Paare (user + assistant) pro chat_id für Router-Kontext
-```
-
----
-
-## Callbacks (InlineKeyboard)
-
-| Callback-Data | Handler | Aktion |
-|---|---|---|
-| `mail:send` | handle_callback | Compose-Entwurf absenden |
-| `mail:cancel` | handle_callback | Compose-Entwurf verwerfen |
-| `mail:action:confirm` | handle_callback | Pending Write-Op ausführen (archive/delete/move/reply/forward) |
-| `mail:action:cancel` | handle_callback | Pending Write-Op + Suchergebnis verwerfen |
-| `mail:select:{n}` | handle_callback | Mail n aus Multi-Treffer-Liste wählen → Confirm |
-| `cal:action:confirm` | handle_callback | Pending Kalender-Aktion (Erstellen/Ändern/Absagen) ausführen |
-| `cal:action:cancel` | handle_callback | Pending Kalender-Aktion verwerfen |
-| `cal:select:{n}` | handle_callback | Termin n aus Multi-Treffer-Liste wählen → Confirm |
-
----
-
-## MS Graph OAuth
-
-**Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared` · `Calendars.ReadWrite`
-**Authority:** `https://login.microsoftonline.com/consumers` (persönliche MS-Accounts)
-**Token-Cache:** `/var/lib/jarvis/.jarvis/microsoft_tokens.json` (MSAL SerializableTokenCache)
-**Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
-
-Achtung: Nach Scope-Änderung muss Re-Auth durchgeführt werden — MSAL upgraded Token nicht automatisch.
-Kalender läuft seit der Outlook-Migration über MS Graph (`/me/calendarView`, `/me/events`).
-
----
-
-## Tests
+## Deploy
 
 ```bash
-# Standard (kein Live-API-Zugang nötig)
-PYTHONPATH=agents .venv/bin/pytest tests/ -q --tb=short \
-  --ignore=tests/test_briefing_agent.py \
-  --ignore=tests/test_mail_send.py \
-  --ignore=tests/test_tasks_agent.py
+# Deploy auf VPS — automatisch via GitHub Webhook nach git push
+# Manuell (Notfall):
+ssh root@100.115.184.3 "cd /opt/herrlich-ai-platform && git pull && rsync -a --delete agents/ /opt/jarvis/ && systemctl restart jarvis"
 
-# Mit Live-APIs (VPS oder VPN + MS-Token)
-PYTHONPATH=agents .venv/bin/pytest tests/ -v --tb=short
+# Logs live
+ssh root@100.115.184.3 "journalctl -u jarvis -f --no-pager"
+
+# Service-Status
+ssh root@100.115.184.3 "systemctl status jarvis"
+
+# VPS direkt öffnen
+ssh root@100.115.184.3
+# VS Code Browser
+# code.herrlich.dev
 ```
 
-**Test-Dateien:**
-
-| Datei | Live-API? | Testet |
-|---|---|---|
-| test_mail_write.py | Nein | MailAgent Write-Methoden (mock requests) |
-| test_memory_agent.py | Nein | MemoryAgent extract/retrieve |
-| test_router_context.py | Nein | Router mit Kontext-Nachrichten |
-| test_proactive_agent.py | Nein | ProactiveAgent-Logik (mock) |
-| test_weather_agent.py | Nein | Weather-Parsing |
-| test_briefing_agent.py | **Ja** | Briefing-Build (Live-APIs) |
-| test_mail_send.py | **Ja** | Mail-Senden via MS Graph |
-| test_tasks_agent.py | **Ja** | To-Do via MS Graph |
-
-**Mock-Muster in test_mail_write.py:**
-```python
-with patch("agents.mail_agent.get_access_token", return_value="tok"), \
-     patch("requests.post", return_value=_ok(200)) as mock_post:
-    result = agent.archive("mail123")
-```
-
----
-
-## Neuen Agenten / Intent hinzufügen — Checkliste
-
-1. **`agents/<name>_agent.py`** — Agenten-Logik implementieren
-2. **`agents/router.py`** — neuen Intent in `_SYSTEM_TEMPLATE` dokumentieren (Beispiele + Parameter)
-3. **`agents/router.py`** — Intent-Name in die Whitelist-Liste im `route_with_llm`-Validator eintragen
-4. **`agents/dispatch.py`** — `elif intent == "<name>":` Block in `_process_text()` hinzufügen
-5. **`tests/test_<name>.py`** — Unit-Tests (mocked)
-6. **`CLAUDE.md`** — Agenten-Tabelle aktualisieren
-
----
-
-## Proaktive Jobs (APScheduler)
-
-| Job-ID | Cron | Funktion | Modell |
-|---|---|---|---|
-| `send_briefing` | Mo–Fr 07:00 Berlin | Morgenbriefing | Haiku |
-| `check_important_mails` | 09:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
-| `check_important_mails` | 14:00 täglich | Mail-Wichtigkeitsprüfung | Haiku |
-| `send_task_reminder` | 10:00 täglich | Überfällige Tasks | — |
-| `send_weekly_review` | Fr 17:00 | Wochenrückblick | Sonnet |
-
-Jobs werden in `jarvis_jobs.db` (SQLite) persistiert — überleben Neustarts.
-
----
-
-## GitHub Webhook — Auto-Deploy
-
-`POST /webhook/github` — validiert HMAC, führt `git fetch + reset --hard origin/main` aus, dann repo-spezifische Post-Pull-Aktionen.
+**GitHub Webhook Auto-Deploy:** `POST /webhook/github` — validiert HMAC, `git fetch + reset --hard origin/main`, dann `post_rsync` (agents/ → /opt/jarvis/) + `systemctl restart jarvis` (benötigt polkit-Regel `/etc/polkit-1/rules.d/49-jarvis-restart.rules`).
 
 ```python
 _GITHUB_REPOS: dict[str, dict] = {
@@ -318,95 +130,118 @@ _GITHUB_REPOS: dict[str, dict] = {
 - `post_restart`: `systemctl restart <service>` (nach 3s Delay via Popen)
 - `post_docker`: `docker compose up -d --build` im angegebenen Verzeichnis
 
-**Voraussetzung für `post_restart`:** Der Webhook läuft als `jarvis`-User. Damit
-`systemctl restart jarvis` nicht-interaktiv durchläuft, muss die polkit-Regel
-`/etc/polkit-1/rules.d/49-jarvis-restart.rules` existieren — sie erlaubt dem
-`jarvis`-User das Verwalten von `jarvis.service`. Fehlt sie, scheitert der
-Restart still mit „Interactive authentication required": git-pull + rsync laufen
-durch, aber der Prozess lädt den neuen Code **nicht** — Deploys wirken erst beim
-nächsten manuellen Neustart. Bei VPS-Neuaufbau die Regel mit anlegen.
+## Arbeiten an diesem Projekt
 
----
+MUSS vor Implementierungsarbeit gelesen werden: `DEVELOPMENT.md`.
 
-## Key Commands
+## Projekt-spezifische Konventionen
 
-```bash
-# Tests lokal
-PYTHONPATH=agents .venv/bin/pytest tests/ -q --tb=short \
-  --ignore=tests/test_briefing_agent.py \
-  --ignore=tests/test_mail_send.py \
-  --ignore=tests/test_tasks_agent.py
+### Environment Variables (`/var/lib/jarvis/.env` auf VPS)
 
-# Deploy auf VPS — läuft automatisch via GitHub Webhook nach git push
-# Manuell (Notfall):
-ssh root@100.115.184.3 "cd /opt/herrlich-ai-platform && git pull && rsync -a --delete agents/ /opt/jarvis/ && systemctl restart jarvis"
+| Variable | Pflicht | Beschreibung |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | ✅ | Bot-Token von @BotFather |
+| `TELEGRAM_CHAT_ID` | ✅ | Chat-ID für proaktive Nachrichten |
+| `ANTHROPIC_API_KEY` | ✅ | Anthropic API Key |
+| `MICROSOFT_CLIENT_ID` | ✅ | Azure App Registration Client ID |
+| `MICROSOFT_CLIENT_SECRET` | ✅ | Azure App Registration Client Secret |
+| `OAUTH_LOGIN_SECRET` | ✅ | Schützt `/oauth/microsoft/login` |
+| `GITHUB_TOKEN` | ✅ | GitHub Personal Access Token |
+| `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC-Secret für GitHub Webhook |
+| `GROQ_API_KEY` | ✅ | Groq API Key für Whisper |
+| `JARVIS_AGENT_MODEL` | ❌ | Modell für Agenten (Default: `claude-sonnet-4-6`) |
+| `JARVIS_WORKSPACE_DIR` | ❌ | Workspace-Root (Default: `~/Code`) |
+| `JARVIS_CLAUDE_CLI_PATH` | ❌ | Pfad zur `claude`-CLI |
+| `CLAUDE_CODE_OAUTH_TOKEN` | ❌ | OAuth-Token der Claude Code CLI (headless) |
+| `JARVIS_DATA_DIR` | ❌ | Pfad für DBs + Tokens (Default: `/var/lib/jarvis/.jarvis`) |
+| `REMINDER_TODO_LIST` | ❌ | To-Do-Liste für Erinnerungen (Default: `Tasks`) |
+| `WEATHER_LAT` / `WEATHER_LON` | ❌ | Heimatort-Koordinaten (Default: Tutzing) |
+| `WEATHER_LOCATION_NAME` | ❌ | Anzeigename (Default: `Tutzing`) |
 
-# Logs live
-ssh root@100.115.184.3 "journalctl -u jarvis -f --no-pager"
+### Datenbank-Dateien (`/var/lib/jarvis/.jarvis/`)
 
-# Service-Status
-ssh root@100.115.184.3 "systemctl status jarvis"
+| Datei | Klasse | Inhalt |
+|---|---|---|
+| `conversations.db` | `ConversationDB` | Gesprächsverlauf (nur personal/work/research) |
+| `memories.db` | `MemoryDB` | Extrahierte Fakten + Embeddings |
+| `sessions.db` | `SessionDB` | Claude-Code-Session-IDs (TTL 2h) |
+| `proactive.db` | `ProactiveDB` | reported_mails + reminded_tasks (30-Tage-TTL) |
+| `microsoft_tokens.json` | — | MSAL Token-Cache |
+| `jarvis_jobs.db` | APScheduler | Persistente Job-Definitionen |
 
-# VPS direkt öffnen
-ssh root@100.115.184.3
+### Claude-Modelle
+
+| Verwendung | Modell |
+|---|---|
+| Intent-Routing | `claude-haiku-4-5-20251001` |
+| Personal / Work / Research | `claude-sonnet-4-6` |
+| Mail-Importance, Memory, Briefing | `claude-haiku-4-5-20251001` |
+| Weekly Review | `claude-sonnet-4-6` |
+
+### Proaktive Jobs (APScheduler)
+
+| Job-ID | Cron | Funktion |
+|---|---|---|
+| `send_briefing` | Mo–Fr 07:00 Berlin | Morgenbriefing (Haiku) |
+| `check_important_mails` | 09:00 + 14:00 | Mail-Wichtigkeitsprüfung (Haiku) |
+| `send_task_reminder` | 10:00 | Überfällige Tasks |
+| `send_weekly_review` | Fr 17:00 | Wochenrückblick (Sonnet) |
+
+### Pending-State in `app_state.py`
+
+```python
+_pending_mail_ops: dict[int, dict]       # Mail-Write-Op wartet auf Confirm
+_pending_calendar_ops: dict[int, dict]   # Kalender-Aktion wartet auf Confirm
+_last_mail_search: dict[int, dict]       # Multi-Treffer-Auswahl (TTL: 3 Min)
+_last_calendar_search: dict[int, dict]   # Termin-Multi-Treffer-Auswahl (TTL: 3 Min)
+_recent_conv: dict[int, list]            # Letzte Konversations-Paare für Router-Kontext
 ```
 
+### Callbacks (InlineKeyboard)
+
+| Callback-Data | Aktion |
+|---|---|
+| `mail:send` / `mail:cancel` | Compose-Entwurf absenden / verwerfen |
+| `mail:action:confirm` / `mail:action:cancel` | Pending Write-Op ausführen / verwerfen |
+| `mail:select:{n}` | Mail n aus Multi-Treffer → Confirm |
+| `cal:action:confirm` / `cal:action:cancel` | Kalender-Aktion ausführen / verwerfen |
+| `cal:select:{n}` | Termin n aus Multi-Treffer → Confirm |
+
+### MS Graph OAuth
+
+**Scopes:** `Mail.ReadWrite` · `Mail.Send` · `Tasks.ReadWrite` · `Tasks.ReadWrite.Shared` · `Calendars.ReadWrite`
+**Re-Auth:** `https://herrlich.dev/oauth/microsoft/login?secret=<OAUTH_LOGIN_SECRET>`
+Nach Scope-Änderung muss Re-Auth durchgeführt werden.
+
+### Neuen Agenten / Intent hinzufügen
+
+1. `agents/<name>_agent.py` — Agenten-Logik
+2. `agents/router.py` — Intent in `_SYSTEM_TEMPLATE` + Whitelist-Liste
+3. `agents/dispatch.py` — `elif intent == "<name>":` in `_process_text()`
+4. `tests/test_<name>.py` — Unit-Tests (mocked)
+5. `CLAUDE.md` — Agenten-Tabelle aktualisieren
+
+### Agentischer Pfad — Phase 1
+
+`personal`/`work`/`research` laufen durch `agents/agent.py` (Claude Agent SDK, `run_agent()`). Router bleibt vorgelagert.
+
+- **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — CLI nutzt `CLAUDE_CODE_OAUTH_TOKEN`.
+- **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; jarvis hat Traverse-Recht via `setfacl`.
+- **CLI:** `/usr/bin/claude`, SDK-venv `/opt/jarvis/venv/`.
+- Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
+
+### Bekannte Eigenheiten & Fallstricke
+
+- Alle Agenten im gleichen Prozess — kein Microservice-Split
+- `PYTHONPATH=agents` muss immer gesetzt sein
+- `.venv` im Projekt-Root; auf VPS: `/opt/jarvis/venv/`
+- VPS-Code unter `/opt/herrlich-ai-platform/`; rsync → `/opt/jarvis/`; Secrets aus `/var/lib/jarvis/.env`
+- MS Graph `/archive` existiert nicht für persönliche Accounts → `move` mit `destinationId: "archive"`
+- Router-Kontext: interleaved User+Jarvis-Paare aus `_recent_conv`
+- Conversation History nur für personal/work/research
+- Kalender-Schreibaktionen zeigen Confirm-Dialog (Callbacks `cal:action:*`)
+- polkit-Regel auf VPS nötig für Webhook-Restart: fehlt sie → rsync läuft, Neustart scheitert still
+
 ---
 
-## Agentischer Pfad — Phase 1 (live seit 18.05.2026)
-
-`personal`/`work`/`research` laufen durch einen echten Agenten
-(`agents/agent.py`, Claude Agent SDK) statt durch die alten Single-shot-
-`chat_handler`-Funktionen. Der Router bleibt
-vorerst vorgelagert — strukturierte Intents (`mail`, `calendar`, …) laufen
-unverändert über ihre Handler. Verklassifiziert der Router eine Frage (z.B. als
-`mail`), erreicht sie den Agenten nicht — bekannte Limitierung, behoben in Phase 3.
-
-- `agents/agent.py` — `run_agent()`: ein zustandsloser SDK-Lauf pro Nachricht,
-  History als Text eingebettet, Antwort an Telegram. Pro Chat serialisiert.
-- `agents/tools/` — Tool-Paket: `workspace_tool.py` (`workspace`-Tool: Datei
-  lesen/suchen/listen, sandboxed auf `JARVIS_WORKSPACE_DIR`) + Registry
-  `__init__.py` (MCP-Server-Bau, `can_use_tool`-Permission-Hook).
-- Werkzeuge: `workspace`, `weather`, `news` + die eingebauten `WebSearch`/`WebFetch`. Built-in
-  `Bash`/`Edit`/`Read` sind für den Agenten deaktiviert.
-
-### Auth, Billing & Runtime (VPS)
-
-Das Agent SDK startet die `claude`-CLI als Subprozess. Aktueller Stand:
-
-- **Billing übers Abo:** `run_agent` setzt `env={"ANTHROPIC_API_KEY": ""}` — die CLI
-  ignoriert den API-Key und nutzt `CLAUDE_CODE_OAUTH_TOKEN` (in `/var/lib/jarvis/.env`).
-  Der jarvis-Prozess behält `ANTHROPIC_API_KEY` für die alten Agenten (Router/Memory).
-- **Workspace:** `JARVIS_WORKSPACE_DIR=/home/claude/workspace`; `jarvis` hat via
-  `setfacl -m u:jarvis:--x /home/claude` Traverse-Recht (einmalig gesetzt).
-- **CLI:** Claude Code CLI unter `/usr/bin/claude`, `claude-agent-sdk` im venv
-  `/opt/jarvis/venv/`.
-
-**Rollback:** Per `git revert` des betroffenen Commits + Redeploy (GitHub-Webhook
-oder manueller Neustart). Das frühere Feature-Flag `JARVIS_AGENT_ENABLED` ist mit
-Phase 2 entfallen.
-
-Live-Smoke-Test: `JARVIS_LIVE_TESTS=1 PYTHONPATH=agents .venv/bin/pytest tests/test_agent_live.py -v`
-
----
-
-## Stack
-
-Python 3.11 · FastAPI · python-telegram-bot · anthropic SDK · MSAL · APScheduler 3.x
-MS Graph API · Open-Meteo · Groq Whisper · systemd · Caddy
-
----
-
-## Bekannte Eigenheiten & Fallstricke
-
-- **Alle Agenten im gleichen Prozess** — kein Microservice-Split, kein shared state zwischen Requests außer den module-level Dicts
-- **Router-Kontext**: interleaved User+Jarvis-Paare — letzte Einträge aus `_recent_conv`
-- **Conversation History** nur für `personal`/`work`/`research` — andere Intents haben kein Claude-Gedächtnis
-- **Memory-Extraktion** läuft async nach jedem personal/work/research Response (nicht blockierend)
-- **MS Graph `/archive`-Endpoint** existiert nicht für persönliche Accounts → wird als `move` mit `destinationId: "archive"` implementiert
-- **Briefing** kann Markdown-Fehler produzieren (unkontrollierte `*`/`_` in News/Kalender) → automatischer Plaintext-Fallback
-- **Erinnerungen** — laufen vollständig über MS To Do (`tasks_agent`, Intent `reminder_write`); kein Apple/CalDAV-Pfad mehr
-- **Kalender-Schreibaktionen** — Erstellen, Ändern und Absagen zeigen einen Confirm-Dialog (Callbacks `cal:action:*`); bei mehreren Treffern zuerst Auswahl via `cal:select:{n}`, analog zu Mail-Write
-- **PYTHONPATH=agents** muss immer gesetzt sein — alle Agenten importieren sich gegenseitig ohne Package-Prefix
-- **`.venv`** liegt im Projekt-Root — auf VPS ist es `/opt/jarvis/venv/`
-- **VPS-Code** unter `/opt/herrlich-ai-platform/` (git clone), rsync synchronisiert `agents/` → `/opt/jarvis/` nach jedem Pull; systemd liest Secrets aus `/var/lib/jarvis/.env`
+@.claude/CONVENTIONS.md
